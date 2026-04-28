@@ -89,7 +89,7 @@ export async function findMatchingSubscriptions(whaleUsdSize: number, category: 
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
       lastNotifiedAt: doc.lastNotifiedAt,
-    })));
+    }));
 }
 
 export async function updateLastNotified(subId: string): Promise<void> {
