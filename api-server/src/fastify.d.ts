@@ -4,4 +4,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     hub: Hub;
   }
+  interface FastifyReply {
+    startTime?: number;
+  }
 }

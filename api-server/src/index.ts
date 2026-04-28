@@ -36,11 +36,11 @@ const fastify = Fastify({
   },
 });
 
-fastify.addHook('onRequest', (_request, reply) => {
+fastify.addHook('onRequest', async (_request, reply) => {
   reply.startTime = Date.now();
 });
 
-fastify.addHook('onResponse', (request, reply) => {
+fastify.addHook('onResponse', async (request, reply) => {
   const route = request.routeOptions?.url ?? request.url;
   const status = reply.statusCode;
   httpRequestsTotal.inc({ route, status: String(status) });
