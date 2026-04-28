@@ -72,6 +72,7 @@ await fastify.register(rateLimit, {
   max: 60,
   timeWindow: '1 minute',
   redis: rateLimitRedis,
+  skipOnError: true,
   keyGenerator: (request) => {
     return (request.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
       ?? request.ip
