@@ -1,7 +1,7 @@
 FROM node:22-slim AS build
 WORKDIR /app
 COPY api-server/package*.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci
 COPY api-server/ ./
 RUN npm run build
 
