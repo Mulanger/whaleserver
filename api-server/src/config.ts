@@ -16,7 +16,7 @@ const envSchema = z.object({
   FIREBASE_PRIVATE_KEY: z.string().optional(),
   CORS_ORIGINS: z.string().default('https://polywatch.app,https://www.polywatch.app'),
   MAX_PUSHES_PER_USER_PER_HOUR: z.coerce.number().int().positive().default(5),
-  SENTRY_DSN: z.string().url().optional(),
+  SENTRY_DSN: z.string().url().optional().or(z.literal('')),
 });
 
 const parsed = envSchema.safeParse(process.env);
