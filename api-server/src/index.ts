@@ -36,6 +36,8 @@ const fastify = Fastify({
   },
 });
 
+fastify.get('/health', async () => ({ ok: true }));
+
 fastify.addHook('onRequest', (_request, reply) => {
   reply.startTime = Date.now();
 });
@@ -90,8 +92,6 @@ const redisSub = await createRedisSubscriber();
 const hub = createHub(redisSub);
 
 fastify.decorate('hub', hub);
-
-await fastify.register(registerHealthRoutes);
 
 fastify.get('/metrics', async (_request, reply) => {
   const metrics = await getMetrics();
