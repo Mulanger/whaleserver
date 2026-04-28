@@ -1,17 +1,19 @@
-FROM node:22-slim
-
-RUN apt-get update && apt-get install -y \
-    python3 \
-    make \
-    g++ \
-    cmake \
-    && rm -rf /var/lib/apt/lists/*
-
+FROM node:22-slim AS deps
 WORKDIR /app
 COPY api-server/package*.json ./
-RUN npm install
+RUN npm ci --ignore-scripts --omit=optional
+
+FROM node:22-slim AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
 COPY api-server/ ./
 RUN npm run build
 
+FROM node:22-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/package*.json ./
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["node", "dist/index.js"]
