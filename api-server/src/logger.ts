@@ -1,11 +1,10 @@
 import pino from 'pino';
 import { config } from './config.js';
 
-export const logger = pino({
+const pinoConfig: pino.LoggerOptions = {
   level: config.LOG_LEVEL,
-  transport: config.NODE_ENV === 'development'
-    ? { target: 'pino-pretty', options: { colorize: true } }
-    : undefined,
-});
+};
+
+export const logger = pino(pinoConfig);
 
 export type Logger = typeof logger;

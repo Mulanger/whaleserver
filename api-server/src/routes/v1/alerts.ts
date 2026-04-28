@@ -60,12 +60,14 @@ export async function registerAlertsRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', async (request, reply) => {
     try {
       await request.jwtVerify();
-    } catch {
+    } catch (err) {
       return reply.status(401).send({ error: 'unauthorized' });
     }
   });
 
-  fastify.addHook('preHandler', addSlidingExpiryHeader);
+  fastify.addHook('preHandler', async (request, reply) => {
+    await addSlidingExpiryHeader(fastify, request, reply);
+  });
 
   fastify.post('/subscribe', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
     const payload = verifyToken(fastify, request.headers.authorization!.replace('Bearer ', ''));

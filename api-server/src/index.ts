@@ -30,25 +30,23 @@ import {
 initSentry();
 
 const fastify = Fastify({
-  logger,
+  logger: { level: 'info' },
   ajv: {
     customOptions: { strict: 'reject' },
   },
 });
 
-fastify.addHook('onRequest', (_request, reply, done) => {
+fastify.addHook('onRequest', (_request, reply) => {
   reply.startTime = Date.now();
-  done();
 });
 
-fastify.addHook('onResponse', (request, reply, done) => {
+fastify.addHook('onResponse', (request, reply) => {
   const route = request.routeOptions?.url ?? request.url;
   const status = reply.statusCode;
   httpRequestsTotal.inc({ route, status: String(status) });
   if (reply.startTime) {
     httpRequestDurationMs.observe({ route }, Date.now() - reply.startTime);
   }
-  done();
 });
 
 process.on('uncaughtException', (e) => captureException(e));
