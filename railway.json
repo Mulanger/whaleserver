@@ -5,7 +5,7 @@
     "rootDirectory": "api-server"
   },
   "deploy": {
-    "numReplicas": 2,
+    "numReplicas": 1,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10,
     "healthcheckPath": "/health",
