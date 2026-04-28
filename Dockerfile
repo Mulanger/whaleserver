@@ -8,9 +8,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY package*.json ./
+COPY api-server/package*.json ./
 RUN npm install
-COPY . .
+COPY api-server/ ./
 RUN npm run build
 
 EXPOSE 3000
