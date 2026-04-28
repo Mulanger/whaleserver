@@ -29,11 +29,6 @@ import {
 
 initSentry();
 
-console.log('Starting app, NODE_ENV:', process.env.NODE_ENV);
-console.log('MongoDB URI:', process.env.MONGO_URI ? 'set' : 'NOT SET');
-console.log('Redis URL:', process.env.REDIS_URL ? 'set' : 'NOT SET');
-console.log('JWT_SECRET:', process.env.JWT_SECRET ? 'set' : 'NOT SET');
-
 const fastify = Fastify({
   logger: { level: 'info' },
   ajv: {
