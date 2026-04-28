@@ -1,11 +1,7 @@
-FROM node:22-slim AS deps
-WORKDIR /app
-COPY api-server/package*.json ./
-RUN npm ci --ignore-scripts --omit=optional
-
 FROM node:22-slim AS build
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+COPY api-server/package*.json ./
+RUN npm ci --ignore-scripts
 COPY api-server/ ./
 RUN npm run build
 
