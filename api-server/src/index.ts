@@ -36,8 +36,6 @@ const fastify = Fastify({
   },
 });
 
-fastify.get('/health', async () => ({ ok: true }));
-
 fastify.addHook('onRequest', (_request, reply) => {
   reply.startTime = Date.now();
 });
@@ -53,6 +51,8 @@ fastify.addHook('onResponse', (request, reply) => {
 
 process.on('uncaughtException', (e) => captureException(e));
 process.on('unhandledRejection', (e) => captureException(e));
+
+await fastify.register(registerHealthRoutes);
 
 await fastify.register(cors, {
   origin: config.CORS_ORIGINS.split(',').map((s) => s.trim()),
