@@ -1,5 +1,6 @@
 import { getDb } from '../mongo.js';
-import type { TraderDto } from '../../shared/types.js';
+import type { TraderDto, WhaleDto } from '../../shared/types.js';
+import { toWhaleDto } from './whales_repo.js';
 
 export async function getTraderByWallet(wallet: string): Promise<TraderDto | null> {
   const db = getDb();
@@ -20,13 +21,15 @@ export async function getTraderByWallet(wallet: string): Promise<TraderDto | nul
 export async function getRecentWhalesForTrader(
   wallet: string,
   limit = 20
-): Promise<unknown[]> {
+): Promise<WhaleDto[]> {
   const db = getDb();
 
-  return db
+  const docs = await db
     .collection('trades')
     .find({ 'trader.proxyWallet': wallet.toLowerCase() })
     .sort({ timestamp: -1 })
     .limit(limit)
     .toArray();
+
+  return docs.map(toWhaleDto);
 }

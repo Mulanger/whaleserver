@@ -11,6 +11,7 @@ describe('filters.matches', () => {
     usdSize: 50000,
     shares: 100000,
     priceCents: 50,
+    priceMillicents: 5000,
     timestamp: 1735689600,
     market: {
       slug: 'BTC-yes',

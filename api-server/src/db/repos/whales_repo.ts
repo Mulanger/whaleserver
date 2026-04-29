@@ -1,9 +1,9 @@
 import { ObjectId } from 'mongodb';
 import { getDb } from '../mongo.js';
 import type { WhaleDto, WhaleFilter, Cursor } from '../../shared/types.js';
+import { resolvePriceMillicents } from '../../shared/whale_price.js';
 
 export function toWhaleDto(doc: any): WhaleDto {
-  const { raw, ...rest } = doc;
   return {
     id: doc._id.toString(),
     tier: doc.tier,
@@ -12,6 +12,7 @@ export function toWhaleDto(doc: any): WhaleDto {
     usdSize: doc.usdSize,
     shares: doc.shares,
     priceCents: doc.priceCents,
+    priceMillicents: resolvePriceMillicents(doc),
     timestamp: doc.timestamp,
     market: doc.market,
     trader: doc.trader,

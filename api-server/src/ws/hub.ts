@@ -4,6 +4,7 @@ import type { WhaleDto, WhaleFilter } from '../shared/types.js';
 import { matches } from './filters.js';
 import { logger } from '../logger.js';
 import { wsConnectionsTotal, wsConnectionsActive } from '../observability.js';
+import { withPriceMillicents } from '../shared/whale_price.js';
 
 interface ClientEntry {
   socket: WebSocket;
@@ -28,7 +29,7 @@ export function createHub(redisSub: Redis) {
   redisSub.on('message', (_channel: string, message: string) => {
     let whale: WhaleDto;
     try {
-      whale = JSON.parse(message) as WhaleDto;
+      whale = withPriceMillicents(JSON.parse(message)) as WhaleDto;
     } catch {
       return;
     }
@@ -116,10 +117,11 @@ export function createHub(redisSub: Redis) {
     },
 
     broadcast(whale: WhaleDto) {
+      const dto = withPriceMillicents(whale);
       for (const [connId, client] of clients) {
-        if (matches(whale, client.filter)) {
+        if (matches(dto, client.filter)) {
           try {
-            client.socket.send(JSON.stringify({ type: 'whale', data: whale }));
+            client.socket.send(JSON.stringify({ type: 'whale', data: dto }));
           } catch {
             // ignore
           }

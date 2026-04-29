@@ -1,5 +1,6 @@
 import { getDb } from '../mongo.js';
-import type { MarketDto } from '../../shared/types.js';
+import type { MarketDto, WhaleDto } from '../../shared/types.js';
+import { toWhaleDto } from './whales_repo.js';
 
 export async function getMarkets(opts: {
   search?: string;
@@ -67,14 +68,16 @@ export async function getMarketBySlug(slug: string): Promise<MarketDto | null> {
 export async function getRecentWhalesForMarket(
   slug: string,
   limit = 20
-): Promise<unknown[]> {
+): Promise<WhaleDto[]> {
   const db = getDb();
   const weekAgo = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
 
-  return db
+  const docs = await db
     .collection('trades')
     .find({ 'market.slug': slug, timestamp: { $gte: weekAgo } })
     .sort({ timestamp: -1 })
     .limit(limit)
     .toArray();
+
+  return docs.map(toWhaleDto);
 }

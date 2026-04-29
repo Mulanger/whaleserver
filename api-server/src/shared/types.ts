@@ -6,6 +6,7 @@ export interface WhaleDto {
   usdSize: number;
   shares: number;
   priceCents: number;
+  priceMillicents: number;
   timestamp: number;
   market?: {
     slug: string;
