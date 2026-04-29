@@ -14,6 +14,7 @@ import { registerWhalesRoutes } from './routes/v1/whales.js';
 import { registerStreamRoute } from './routes/v1/stream.js';
 import { registerMarketsRoutes } from './routes/v1/markets.js';
 import { registerTradersRoutes } from './routes/v1/traders.js';
+import { registerLeaderboardRoutes } from './routes/v1/leaderboard.js';
 import { registerAlertsRoutes } from './routes/v1/alerts.js';
 import { registerAuthRoutes } from './routes/v1/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
@@ -105,6 +106,7 @@ await fastify.register(registerWhalesRoutes, { prefix: '/v1/whales' });
 await fastify.register(registerStreamRoute, { prefix: '/v1/whales/stream' });
 await fastify.register(registerMarketsRoutes, { prefix: '/v1/markets' });
 await fastify.register(registerTradersRoutes, { prefix: '/v1/traders' });
+await fastify.register(registerLeaderboardRoutes, { prefix: '/v1/leaderboard' });
 await fastify.register(registerAlertsRoutes, { prefix: '/v1/alerts' });
 
 if (config.FIREBASE_PROJECT_ID && config.FIREBASE_PROJECT_ID !== 'mock') {
