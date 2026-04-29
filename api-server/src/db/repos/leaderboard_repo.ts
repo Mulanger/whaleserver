@@ -1,5 +1,6 @@
 import { getDb } from '../mongo.js';
 import { toWhaleDto } from './whales_repo.js';
+import { isUserFollowing } from './follows_repo.js';
 
 export type LeaderboardWindow = '7d' | '30d' | '365d';
 
@@ -11,6 +12,8 @@ interface TraderDailyStatsDoc {
   volume: number;
   tradeCount: number;
   whaleCount: number;
+  buyVolume?: number;
+  sellVolume?: number;
 }
 
 interface LeaderboardAggregateRow {
@@ -45,26 +48,40 @@ export interface LeaderboardPage {
   nextCursor: string | null;
 }
 
-interface TraderStatsWindow {
+export interface TraderStatsWindow {
   volume: number;
   tradeCount: number;
   whaleCount: number;
+  buyVolume: number;
+  sellVolume: number;
+}
+
+interface RankBadge {
+  window: LeaderboardWindow;
+  rank: number;
 }
 
 export interface TraderProfile {
   proxyWallet: string;
+  shortAddress: string;
   pseudonym: string | null;
-  displayName: null;
-  profileImage: null;
+  displayName: string | null;
+  profileImage: string | null;
+  bio: null;
+  firstSeen: number;
+  rankBadge: RankBadge | null;
   stats: Record<LeaderboardWindow, TraderStatsWindow>;
-  recentWhales: ReturnType<typeof toWhaleDto>[];
   dailyVolume: Array<{ date: string; volume: number }>;
+  recentWhales: ReturnType<typeof toWhaleDto>[];
+  isFollowing?: boolean;
 }
 
-const CACHE_TTL_MS = 60_000;
+const LEADERBOARD_CACHE_TTL_MS = 60_000;
+const PROFILE_CACHE_TTL_MS = 30_000;
 const MAX_CACHED_ROWS = 500;
 
 const leaderboardCache = new Map<LeaderboardWindow, LeaderboardCacheEntry>();
+const traderProfileCache = new Map<string, { expiresAt: number; data: TraderProfile }>();
 
 const WINDOW_DAYS: Record<LeaderboardWindow, number> = {
   '7d': 7,
@@ -101,6 +118,10 @@ function decodeCursorOffset(cursor?: string): number {
   }
 }
 
+function shortAddress(wallet: string): string {
+  return `${wallet.slice(0, 6)}..${wallet.slice(-4)}`;
+}
+
 async function computeLeaderboard(window: LeaderboardWindow): Promise<LeaderboardCacheEntry> {
   const db = getDb();
   const startDate = startDateForWindow(WINDOW_DAYS[window]);
@@ -135,9 +156,20 @@ async function computeLeaderboard(window: LeaderboardWindow): Promise<Leaderboar
 
   return {
     asOf: Math.floor(Date.now() / 1000),
-    expiresAt: Date.now() + CACHE_TTL_MS,
+    expiresAt: Date.now() + LEADERBOARD_CACHE_TTL_MS,
     items,
   };
+}
+
+async function getLeaderboardSnapshot(window: LeaderboardWindow, fresh = false): Promise<LeaderboardCacheEntry> {
+  const cached = leaderboardCache.get(window);
+  if (!fresh && cached && cached.expiresAt > Date.now()) {
+    return cached;
+  }
+
+  const snapshot = await computeLeaderboard(window);
+  leaderboardCache.set(window, snapshot);
+  return snapshot;
 }
 
 function paginateLeaderboard(snapshot: LeaderboardCacheEntry, limit: number, cursor?: string): LeaderboardPage {
@@ -154,22 +186,18 @@ function paginateLeaderboard(snapshot: LeaderboardCacheEntry, limit: number, cur
 }
 
 export async function getLeaderboard(window: LeaderboardWindow, limit: number, cursor?: string, fresh = false): Promise<LeaderboardPage> {
-  const cached = leaderboardCache.get(window);
-  const hasValidCache = cached && cached.expiresAt > Date.now();
-
-  const snapshot = !fresh && hasValidCache
-    ? cached
-    : await computeLeaderboard(window);
-
-  if (!hasValidCache || fresh) {
-    leaderboardCache.set(window, snapshot);
-  }
-
+  const snapshot = await getLeaderboardSnapshot(window, fresh);
   return paginateLeaderboard(snapshot, limit, cursor);
 }
 
 function emptyStats(): TraderStatsWindow {
-  return { volume: 0, tradeCount: 0, whaleCount: 0 };
+  return {
+    volume: 0,
+    tradeCount: 0,
+    whaleCount: 0,
+    buyVolume: 0,
+    sellVolume: 0,
+  };
 }
 
 async function aggregateWalletWindow(wallet: string, window: LeaderboardWindow): Promise<TraderStatsWindow> {
@@ -183,59 +211,104 @@ async function aggregateWalletWindow(wallet: string, window: LeaderboardWindow):
         volume: { $sum: '$volume' },
         tradeCount: { $sum: '$tradeCount' },
         whaleCount: { $sum: '$whaleCount' },
+        buyVolume: { $sum: '$buyVolume' },
+        sellVolume: { $sum: '$sellVolume' },
       },
     },
-    { $project: { _id: 0, volume: 1, tradeCount: 1, whaleCount: 1 } },
+    { $project: { _id: 0, volume: 1, tradeCount: 1, whaleCount: 1, buyVolume: 1, sellVolume: 1 } },
   ]).next();
 
   return row ?? emptyStats();
 }
 
-export async function getTraderProfile(walletInput: string): Promise<TraderProfile | null> {
-  const wallet = walletInput.toLowerCase();
+async function getRankBadge(wallet: string): Promise<RankBadge | null> {
+  let best: RankBadge | null = null;
+
+  for (const window of ['7d', '30d', '365d'] as const) {
+    const snapshot = await getLeaderboardSnapshot(window);
+    const found = snapshot.items.find((item) => item.proxyWallet === wallet);
+    if (!found || found.rank > 100) continue;
+
+    if (!best || found.rank < best.rank) {
+      best = { window, rank: found.rank };
+    }
+  }
+
+  return best;
+}
+
+async function loadTraderProfile(wallet: string, currentUserId?: string): Promise<TraderProfile | null> {
   const db = getDb();
   const dailyStartDate = startDateForWindow(30);
 
-  const [latestStats, stats7d, stats30d, stats365d, dailyVolumeRows, whaleDocs] = await Promise.all([
-    db.collection<TraderDailyStatsDoc>('trader_daily_stats')
-      .find({ proxyWallet: wallet })
-      .sort({ date: -1 })
-      .limit(1)
-      .next(),
+  const [stats7d, stats30d, stats365d, dailyVolumeRows, recentWhaleDocs, latestTradeDoc, firstTradeDoc, rankBadge, following] = await Promise.all([
     aggregateWalletWindow(wallet, '7d'),
     aggregateWalletWindow(wallet, '30d'),
     aggregateWalletWindow(wallet, '365d'),
     db.collection<TraderDailyStatsDoc>('trader_daily_stats')
-      .find(
-        { proxyWallet: wallet, date: { $gte: dailyStartDate } },
-        { projection: { _id: 0, date: 1, volume: 1 } },
-      )
+      .find({ proxyWallet: wallet, date: { $gte: dailyStartDate } }, { projection: { _id: 0, date: 1, volume: 1 } })
       .sort({ date: 1 })
       .toArray(),
     db.collection('trades')
       .find({ 'trader.proxyWallet': wallet })
       .sort({ timestamp: -1 })
-      .limit(20)
+      .limit(10)
       .toArray(),
+    db.collection('trades').findOne(
+      { 'trader.proxyWallet': wallet },
+      { sort: { timestamp: -1 } },
+    ),
+    db.collection('trades').findOne(
+      { 'trader.proxyWallet': wallet },
+      { sort: { timestamp: 1 }, projection: { timestamp: 1 } },
+    ),
+    getRankBadge(wallet),
+    currentUserId ? isUserFollowing(currentUserId, wallet) : Promise.resolve(undefined),
   ]);
 
-  if (!latestStats && whaleDocs.length === 0) {
+  if (!latestTradeDoc) {
     return null;
   }
 
-  const whalePseudonym = whaleDocs.find((doc) => typeof doc?.trader?.pseudonym === 'string')?.trader?.pseudonym ?? null;
-
   return {
     proxyWallet: wallet,
-    pseudonym: latestStats?.pseudonym ?? whalePseudonym,
-    displayName: null,
-    profileImage: null,
+    shortAddress: shortAddress(wallet),
+    pseudonym: latestTradeDoc.trader?.pseudonym ?? null,
+    displayName: latestTradeDoc.trader?.displayName ?? null,
+    profileImage: latestTradeDoc.trader?.profileImage ?? null,
+    bio: null,
+    firstSeen: firstTradeDoc?.timestamp ?? latestTradeDoc.timestamp,
+    rankBadge,
     stats: {
       '7d': stats7d,
       '30d': stats30d,
       '365d': stats365d,
     },
-    recentWhales: whaleDocs.map(toWhaleDto),
     dailyVolume: dailyVolumeRows.map((row) => ({ date: row.date, volume: row.volume })),
+    recentWhales: recentWhaleDocs.map(toWhaleDto),
+    ...(typeof following === 'boolean' ? { isFollowing: following } : {}),
   };
+}
+
+export async function getCachedTraderProfile(walletInput: string, currentUserId?: string): Promise<TraderProfile | null> {
+  const wallet = walletInput.toLowerCase();
+  const cacheKey = `${wallet}:${currentUserId ?? 'anon'}`;
+  const cached = traderProfileCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
+  const profile = await loadTraderProfile(wallet, currentUserId);
+  if (!profile) {
+    return null;
+  }
+
+  traderProfileCache.set(cacheKey, { data: profile, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS });
+  return profile;
+}
+
+export function invalidateTraderProfileCache(walletInput: string, userId: string): void {
+  const wallet = walletInput.toLowerCase();
+  const key = `${wallet}:${userId}`;
+  traderProfileCache.delete(key);
 }

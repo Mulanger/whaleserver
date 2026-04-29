@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import type { Hub } from '../ws/hub.js';
-import type { WhaleFilter } from '../shared/types.js';
+import type { Hub } from '../../ws/hub.js';
+import type { WhaleFilter } from '../../shared/types.js';
+import { verifyToken, extractUserId } from '../../auth/jwt.js';
+import { getFollowedWallets } from '../../db/repos/follows_repo.js';
 
 interface ClientMessage {
   type: 'subscribe' | 'unsubscribe' | 'ping';
@@ -21,18 +23,42 @@ export async function registerStreamRoute(fastify: FastifyInstance) {
     const hub: Hub = (fastify as any).hub;
     const ip = getClientIp(request);
     let filter: WhaleFilter = {};
+    let userId: string | null = null;
 
-    const connId = hub.add(socket, filter, null, ip);
+    const authHeader = request.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      try {
+        const payload = verifyToken(fastify, authHeader.slice(7));
+        userId = extractUserId(payload);
+      } catch {
+        // ignore invalid optional auth for socket establishment
+      }
+    }
+
+    const connId = hub.add(socket, filter, userId, ip);
     if (!connId) return;
 
-    socket.on('message', (data) => {
+    socket.on('message', async (data) => {
       try {
         const msg = JSON.parse(data.toString()) as ClientMessage;
 
         switch (msg.type) {
           case 'subscribe':
             if (msg.filter) {
-              filter = msg.filter;
+              if (msg.filter.following === true) {
+                if (!userId) {
+                  socket.send(JSON.stringify({ type: 'error', code: 'UNAUTHORIZED', message: 'auth required for following filter' }));
+                  break;
+                }
+
+                const followedWallets = await getFollowedWallets(userId, 500);
+                filter = {
+                  ...msg.filter,
+                  traderWallets: followedWallets,
+                };
+              } else {
+                filter = msg.filter;
+              }
               hub.updateFilter(connId, filter);
             }
             break;

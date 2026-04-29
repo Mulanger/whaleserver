@@ -14,6 +14,9 @@ export interface WhaleDto {
   };
   trader?: {
     proxyWallet: string;
+    pseudonym?: string;
+    displayName?: string;
+    profileImage?: string;
     vol30d?: number;
     winRate?: number;
     tradeCount?: number;
@@ -30,6 +33,8 @@ export interface WhaleFilter {
   side?: 'BUY' | 'SELL';
   marketSlug?: string;
   traderWallet?: string;
+  traderWallets?: string[];
+  following?: boolean;
 }
 
 export interface Cursor {

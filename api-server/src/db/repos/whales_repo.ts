@@ -35,6 +35,9 @@ export async function getWhales(
   if (filter.side) q.side = filter.side;
   if (filter.marketSlug) q['market.slug'] = filter.marketSlug;
   if (filter.traderWallet) q['trader.proxyWallet'] = filter.traderWallet.toLowerCase();
+  if (filter.traderWallets?.length) {
+    q['trader.proxyWallet'] = { $in: filter.traderWallets.map((wallet) => wallet.toLowerCase()) };
+  }
 
   if (cursor) {
     q.$or = [

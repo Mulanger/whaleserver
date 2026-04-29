@@ -29,5 +29,13 @@ export async function ensureIndexes(): Promise<void> {
   ]);
   logger.info('created indexes on notification_log with 7-day TTL');
 
+  const traderFollows = db.collection('trader_follows');
+  await traderFollows.createIndexes([
+    { key: { userId: 1, proxyWallet: 1 }, unique: true, name: 'idx_follows_user_wallet' },
+    { key: { userId: 1, createdAt: -1 }, name: 'idx_follows_user_recent' },
+    { key: { proxyWallet: 1 }, name: 'idx_follows_wallet' },
+  ]);
+  logger.info('created indexes on trader_follows');
+
   logger.info('all MongoDB indexes ensured');
 }
