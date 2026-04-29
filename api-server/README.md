@@ -62,6 +62,99 @@ npm start
 | GET | `/health` | Health check | No |
 | GET | `/metrics` | Prometheus metrics | No |
 
+## Alerts + Anonymous Auth Contract
+
+### `POST /v1/auth/anonymous`
+
+Request:
+
+```json
+{
+  "deviceId": "550e8400-e29b-41d4-a716-446655440000",
+  "platform": "ios"
+}
+```
+
+Allowed `platform` values: `"ios" | "android" | "unknown"`.
+
+Response `200`:
+
+```json
+{
+  "token": "<jwt>",
+  "userId": "anon_550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+### Auth on `/v1/alerts/*`
+
+- Requires `Authorization: Bearer <jwt>`.
+- `userId` is derived from JWT `sub`.
+- Optional sliding refresh header: `x-new-token`.
+
+### `POST /v1/alerts/subscribe`
+
+Request:
+
+```json
+{
+  "fcmToken": "<fcm-token>",
+  "minUsd": 25000,
+  "megaOnly": false,
+  "categories": ["Crypto", "Tech"],
+  "quietHours": { "start": "22:00", "end": "07:00", "tz": "Europe/Berlin" }
+}
+```
+
+Notes:
+- Upsert key: `(userId, fcmToken)`.
+- `categories: []` means all categories.
+- `quietHours` is optional.
+
+Response: `204 No Content`.
+
+### `DELETE /v1/alerts/subscribe`
+
+Request body can be empty, or:
+
+```json
+{ "fcmToken": "<fcm-token>" }
+```
+
+Behavior:
+- When `fcmToken` is provided, only that subscription is removed for the current user.
+- When omitted/empty body, all subscriptions for the current user are removed.
+
+Response: `204 No Content`.
+
+### `GET /v1/alerts/me`
+
+Response `200`:
+
+```json
+{
+  "subscription": {
+    "fcmToken": "<fcm-token>",
+    "minUsd": 25000,
+    "megaOnly": false,
+    "categories": [],
+    "quietHours": null
+  }
+}
+```
+
+If no subscription exists: `404`.
+
+### Push Matching Rules
+
+- Match when `whale.usdSize >= minUsd`.
+- If `megaOnly = true`, require `whale.usdSize >= 250000`.
+- If `categories` is empty, match all categories; otherwise category must match.
+- Respect `quietHours` when provided.
+- Push payload includes `data.tradeId = whale.id`.
+- Dedupe key: `(whaleId, fcmToken)`.
+- Invalid/unregistered FCM tokens are removed.
+
 ## Environment Variables
 
 See `.env.example` for all configuration options.

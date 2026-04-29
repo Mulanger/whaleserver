@@ -1,11 +1,10 @@
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
-import { findOrCreateUser } from '../../auth/anonymous.js';
-import { issueToken } from '../../auth/jwt.js';
+import { issueAnonymousToken } from '../../services/auth_service.js';
 
 const anonymousSchema = z.object({
   deviceId: z.string().uuid(),
-  platform: z.enum(['ios', 'android']),
+  platform: z.enum(['ios', 'android', 'unknown']),
 });
 
 export async function registerAuthRoutes(fastify: FastifyInstance) {
@@ -17,12 +16,11 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     }
 
     const { deviceId, platform } = body.data;
-    const { user } = await findOrCreateUser(deviceId, platform);
-    const token = issueToken(fastify, user);
+    const { token, userId } = await issueAnonymousToken(fastify, deviceId, platform);
 
     return reply.send({
       token,
-      userId: user._id,
+      userId,
     });
   });
 }

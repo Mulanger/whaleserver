@@ -1,59 +1,47 @@
 import { z } from 'zod';
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { handleSlidingExpiry } from '../../auth/sliding_expiry.js';
+import { ALERT_CATEGORIES } from '../../alerts/categories.js';
+import { isValidQuietHours } from '../../alerts/quiet_hours.js';
 import {
-  upsertAlertSubscription,
-  deleteAlertSubscription,
-  getAlertSubscription,
-} from '../../db/repos/alerts_repo.js';
-import { extractUserId, verifyToken, shouldRefreshToken } from '../../auth/jwt.js';
-import { getDb } from '../../db/mongo.js';
+  subscribeToAlerts,
+  unsubscribeFromAlerts,
+  getHydrationSubscription,
+} from '../../services/alerts_service.js';
+import type { JwtPayload } from '../../auth/jwt.js';
 
 const subscribeSchema = z.object({
   fcmToken: z.string().min(1),
-  minUsd: z.number().optional().default(25000),
-  megaOnly: z.boolean().optional().default(false),
-  categories: z.array(z.string()).optional().default([]),
+  minUsd: z.number(),
+  megaOnly: z.boolean(),
+  categories: z.array(z.enum(ALERT_CATEGORIES)),
   quietHours: z
     .object({
-      start: z.string(),
-      end: z.string(),
+      start: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
+      end: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
       tz: z.string(),
     })
     .nullable()
-    .optional(),
-});
-
-const fcmTokenQuerySchema = z.object({
-  fcmToken: z.string().min(1),
-});
-
-async function addSlidingExpiryHeader(
-  fastify: FastifyInstance,
-  request: FastifyRequest,
-  reply: FastifyReply
-) {
-  try {
-    const authHeader = request.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) return;
-
-    const token = authHeader.slice(7);
-    const payload = verifyToken(fastify, token);
-
-    if (shouldRefreshToken(payload)) {
-      const db = getDb();
-      const user = await db.collection('users').findOne({ _id: payload.sub });
-      if (user) {
-        const newToken = fastify.jwt.sign({
-          sub: user._id,
-          platform: user.platform,
-          type: user.type,
+    .optional()
+    .superRefine((quietHours, ctx) => {
+      if (!quietHours) return;
+      if (!isValidQuietHours(quietHours)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'invalid quietHours',
         });
-        reply.header('X-New-Token', newToken);
       }
-    }
-  } catch {
-    // ignore auth errors for sliding expiry
-  }
+    }),
+});
+
+const unsubscribeSchema = z
+  .object({
+    fcmToken: z.string().min(1).optional(),
+  })
+  .strict();
+
+function authUser(request: FastifyRequest): JwtPayload {
+  return (request as FastifyRequest & { user: JwtPayload }).user;
 }
 
 export async function registerAlertsRoutes(fastify: FastifyInstance) {
@@ -66,58 +54,60 @@ export async function registerAlertsRoutes(fastify: FastifyInstance) {
   });
 
   fastify.addHook('preHandler', async (request, reply) => {
-    await addSlidingExpiryHeader(fastify, request, reply);
+    await handleSlidingExpiry(fastify, request, reply);
   });
 
   fastify.post('/subscribe', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const payload = verifyToken(fastify, request.headers.authorization!.replace('Bearer ', ''));
     const body = subscribeSchema.safeParse(request.body);
 
     if (!body.success) {
       return reply.status(400).send({ error: 'invalid request body' });
     }
 
-    const userId = extractUserId(payload);
-    const { fcmToken, ...rest } = body.data;
+    const user = authUser(request);
+    const { fcmToken, minUsd, megaOnly, categories, quietHours } = body.data;
 
-    await upsertAlertSubscription({
-      userId,
+    await subscribeToAlerts({
+      userId: user.sub,
       fcmToken,
-      platform: payload.platform,
-      ...rest,
+      minUsd,
+      megaOnly,
+      categories,
+      quietHours,
+      platform: user.platform,
     });
 
     return reply.status(204).send();
   });
 
   fastify.delete('/subscribe', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const payload = verifyToken(fastify, request.headers.authorization!.replace('Bearer ', ''));
-    const parsed = fcmTokenQuerySchema.safeParse(request.query);
+    const parsed = unsubscribeSchema.safeParse(request.body ?? {});
 
     if (!parsed.success) {
-      return reply.status(400).send({ error: 'fcmToken required' });
+      return reply.status(400).send({ error: 'invalid request body' });
     }
 
-    const userId = extractUserId(payload);
-    await deleteAlertSubscription(userId, parsed.data.fcmToken);
+    const user = authUser(request);
+    await unsubscribeFromAlerts(user.sub, parsed.data.fcmToken);
     return reply.status(204).send();
   });
 
   fastify.get('/me', async (request, reply) => {
-    const payload = verifyToken(fastify, request.headers.authorization!.replace('Bearer ', ''));
-    const parsed = fcmTokenQuerySchema.safeParse(request.query);
-
-    if (!parsed.success) {
-      return reply.status(400).send({ error: 'fcmToken required' });
-    }
-
-    const userId = extractUserId(payload);
-    const sub = await getAlertSubscription(userId, parsed.data.fcmToken);
+    const user = authUser(request);
+    const sub = await getHydrationSubscription(user.sub);
 
     if (!sub) {
       return reply.status(404).send({ error: 'subscription not found' });
     }
 
-    return reply.send(sub);
+    return reply.send({
+      subscription: {
+        fcmToken: sub.fcmToken,
+        minUsd: sub.minUsd,
+        megaOnly: sub.megaOnly,
+        categories: sub.categories,
+        quietHours: sub.quietHours ?? null,
+      },
+    });
   });
 }

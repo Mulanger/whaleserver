@@ -14,7 +14,8 @@ export async function ensureIndexes(): Promise<void> {
   await alertSubs.createIndexes([
     { key: { userId: 1, fcmToken: 1 }, unique: true, name: 'idx_alertSubs_userId_fcmToken' },
     { key: { fcmToken: 1 }, name: 'idx_alertSubs_fcmToken' },
-    { key: { minUsd: 1, categories: 1 }, name: 'idx_alertSubs_minUsd_categories' },
+    { key: { userId: 1, updatedAt: -1 }, name: 'idx_alertSubs_userId_updatedAt' },
+    { key: { minUsd: 1, megaOnly: 1, categories: 1 }, name: 'idx_alertSubs_match' },
   ]);
   logger.info('created indexes on alert_subscriptions');
 

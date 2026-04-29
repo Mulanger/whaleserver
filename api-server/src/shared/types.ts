@@ -1,3 +1,5 @@
+export type MobilePlatform = 'ios' | 'android' | 'unknown';
+
 export interface WhaleDto {
   id: string;
   tier: 'mega' | 'large' | 'whale' | 'mini';
@@ -69,7 +71,7 @@ export interface AlertSubscription {
   _id: string;
   userId: string;
   fcmToken: string;
-  platform: 'ios' | 'android';
+  platform: MobilePlatform;
   minUsd: number;
   megaOnly: boolean;
   categories: string[];
@@ -86,7 +88,7 @@ export interface AlertSubscription {
 export interface User {
   _id: string;
   type: 'anonymous' | 'user';
-  platform: 'ios' | 'android';
+  platform: MobilePlatform;
   createdAt: Date;
   lastSeenAt: Date;
 }

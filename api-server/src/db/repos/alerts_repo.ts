@@ -1,57 +1,16 @@
 import { ObjectId } from 'mongodb';
 import { getDb } from '../mongo.js';
-import type { AlertSubscription } from '../../shared/types.js';
+import type { AlertSubscription, MobilePlatform } from '../../shared/types.js';
+import { matchesSubscription } from '../../alerts/matching.js';
 
-export async function upsertAlertSubscription(sub: {
-  userId: string;
-  fcmToken: string;
-  platform: 'ios' | 'android';
-  minUsd: number;
-  megaOnly: boolean;
-  categories: string[];
-  quietHours?: { start: string; end: string; tz: string } | null;
-}): Promise<void> {
-  const db = getDb();
-  await db.collection('alert_subscriptions').updateOne(
-    { userId: sub.userId, fcmToken: sub.fcmToken },
-    {
-      $set: {
-        platform: sub.platform,
-        minUsd: sub.minUsd,
-        megaOnly: sub.megaOnly,
-        categories: sub.categories,
-        quietHours: sub.quietHours ?? null,
-        updatedAt: new Date(),
-      },
-      $setOnInsert: { createdAt: new Date() },
-    },
-    { upsert: true }
-  );
-}
+const MEGA_MIN_USD = 250_000;
 
-export async function deleteAlertSubscription(
-  userId: string,
-  fcmToken: string
-): Promise<void> {
-  const db = getDb();
-  await db.collection('alert_subscriptions').deleteOne({ userId, fcmToken });
-}
-
-export async function getAlertSubscription(
-  userId: string,
-  fcmToken: string
-): Promise<AlertSubscription | null> {
-  const db = getDb();
-  const doc = await db
-    .collection('alert_subscriptions')
-    .findOne({ userId, fcmToken });
-  if (!doc) return null;
-
+function mapAlertSubscription(doc: Record<string, any>): AlertSubscription {
   return {
     _id: doc._id.toString(),
     userId: doc.userId,
     fcmToken: doc.fcmToken,
-    platform: doc.platform,
+    platform: (doc.platform as MobilePlatform | undefined) ?? 'unknown',
     minUsd: doc.minUsd,
     megaOnly: doc.megaOnly,
     categories: doc.categories,
@@ -62,34 +21,102 @@ export async function getAlertSubscription(
   };
 }
 
-export async function findMatchingSubscriptions(whaleUsdSize: number, category: string, tier: string): Promise<AlertSubscription[]> {
+export async function upsertAlertSubscription(sub: {
+  userId: string;
+  fcmToken: string;
+  platform?: MobilePlatform;
+  minUsd: number;
+  megaOnly: boolean;
+  categories: string[];
+  quietHours?: { start: string; end: string; tz: string } | null;
+}): Promise<void> {
   const db = getDb();
+  const now = new Date();
+  const setPayload: Record<string, any> = {
+    minUsd: sub.minUsd,
+    megaOnly: sub.megaOnly,
+    categories: sub.categories,
+    quietHours: sub.quietHours ?? null,
+    updatedAt: now,
+  };
+
+  if (sub.platform && sub.platform !== 'unknown') {
+    setPayload.platform = sub.platform;
+  }
+
+  await db.collection('alert_subscriptions').updateOne(
+    { userId: sub.userId, fcmToken: sub.fcmToken },
+    {
+      $set: setPayload,
+      $setOnInsert: {
+        userId: sub.userId,
+        fcmToken: sub.fcmToken,
+        platform: sub.platform ?? 'unknown',
+        createdAt: now,
+        lastNotifiedAt: null,
+      },
+    },
+    { upsert: true }
+  );
+}
+
+export async function deleteAlertSubscriptionByToken(
+  userId: string,
+  fcmToken: string
+): Promise<void> {
+  const db = getDb();
+  await db.collection('alert_subscriptions').deleteOne({ userId, fcmToken });
+}
+
+export async function deleteAllAlertSubscriptionsForUser(userId: string): Promise<void> {
+  const db = getDb();
+  await db.collection('alert_subscriptions').deleteMany({ userId });
+}
+
+export async function getLatestAlertSubscriptionForUser(userId: string): Promise<AlertSubscription | null> {
+  const db = getDb();
+  const doc = await db
+    .collection('alert_subscriptions')
+    .findOne({ userId }, { sort: { updatedAt: -1, createdAt: -1 } });
+  if (!doc) return null;
+  return mapAlertSubscription(doc);
+}
+
+export async function getAlertSubscriptionByToken(
+  userId: string,
+  fcmToken: string
+): Promise<AlertSubscription | null> {
+  const db = getDb();
+  const doc = await db.collection('alert_subscriptions').findOne({ userId, fcmToken });
+  if (!doc) return null;
+  return mapAlertSubscription(doc);
+}
+
+export async function findMatchingSubscriptions(
+  whaleUsdSize: number,
+  category: string
+): Promise<AlertSubscription[]> {
+  const db = getDb();
+  const query: Record<string, any> = {
+    minUsd: { $lte: whaleUsdSize },
+    $or: [{ categories: { $size: 0 } }, { categories: category }],
+  };
+
+  if (whaleUsdSize < MEGA_MIN_USD) {
+    query.megaOnly = false;
+  }
+
   const docs = await db
     .collection('alert_subscriptions')
-    .find({
-      minUsd: { $lte: whaleUsdSize },
-      $or: [
-        { categories: { $size: 0 } },
-        { categories: category },
-      ],
-    })
+    .find(query)
     .toArray();
 
   return docs
-    .filter((s) => !s.megaOnly || tier === 'mega')
-    .map((doc) => ({
-      _id: doc._id.toString(),
-      userId: doc.userId,
-      fcmToken: doc.fcmToken,
-      platform: doc.platform,
-      minUsd: doc.minUsd,
-      megaOnly: doc.megaOnly,
-      categories: doc.categories,
-      quietHours: doc.quietHours,
-      createdAt: doc.createdAt,
-      updatedAt: doc.updatedAt,
-      lastNotifiedAt: doc.lastNotifiedAt,
-    }));
+    .map((doc) => mapAlertSubscription(doc))
+    .filter((sub) => matchesSubscription(
+      { usdSize: whaleUsdSize, marketCategory: category },
+      sub
+    ));
 }
 
 export async function updateLastNotified(subId: string): Promise<void> {

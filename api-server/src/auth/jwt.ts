@@ -1,13 +1,13 @@
 import type { FastifyInstance } from 'fastify';
-import type { User } from '../shared/types.js';
+import type { User, MobilePlatform } from '../shared/types.js';
 import { config } from '../config.js';
 
 const SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60;
 
 export interface JwtPayload {
   sub: string;
-  platform: 'ios' | 'android';
-  type: 'anonymous';
+  platform: MobilePlatform;
+  type: 'anonymous' | 'user';
   iat: number;
   exp: number;
 }
@@ -18,6 +18,13 @@ export function issueToken(fastify: FastifyInstance, user: User): string {
     platform: user.platform,
     type: user.type,
   });
+}
+
+export function issueTokenFromPayload(
+  fastify: FastifyInstance,
+  payload: Pick<JwtPayload, 'sub' | 'platform' | 'type'>
+): string {
+  return fastify.jwt.sign(payload);
 }
 
 export function verifyToken(fastify: FastifyInstance, token: string): JwtPayload {

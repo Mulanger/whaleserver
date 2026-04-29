@@ -1,52 +1,63 @@
 import { describe, it, expect } from 'vitest';
+import { isInQuietHours, isValidQuietHours } from '../src/alerts/quiet_hours.js';
 
-function inQuietHours(sub: { quietHours?: { start: string; end: string; tz: string } | null }): boolean {
-  if (!sub.quietHours) return false;
-
-  const now = new Date();
-  const local = new Date(now.toLocaleString('en-US', { timeZone: sub.quietHours.tz }));
-  const mins = local.getHours() * 60 + local.getMinutes();
-  const [sh, sm] = sub.quietHours.start.split(':').map(Number);
-  const [eh, em] = sub.quietHours.end.split(':').map(Number);
-  const start = sh * 60 + sm;
-  const end = eh * 60 + em;
-
-  if (start <= end) return mins >= start && mins < end;
-  return mins >= start || mins < end;
-}
-
-describe('inQuietHours', () => {
-  it('returns false when no quietHours', () => {
-    expect(inQuietHours({})).toBe(false);
+describe('isInQuietHours', () => {
+  it('returns false when quietHours is missing', () => {
+    expect(isInQuietHours(undefined)).toBe(false);
+    expect(isInQuietHours(null)).toBe(false);
   });
 
-  it('returns false when quietHours is null', () => {
-    expect(inQuietHours({ quietHours: null })).toBe(false);
+  it('handles same-day windows', () => {
+    const now = new Date('2026-01-01T10:30:00.000Z');
+    const result = isInQuietHours(
+      { start: '10:00', end: '12:00', tz: 'UTC' },
+      now
+    );
+    expect(result).toBe(true);
   });
 
-  it('handles same-day range', () => {
-    const sub = {
-      quietHours: { start: '22:00', end: '23:00', tz: 'UTC' },
-    };
-    const result = inQuietHours(sub);
-    expect(typeof result).toBe('boolean');
+  it('treats end boundary as exclusive', () => {
+    const now = new Date('2026-01-01T12:00:00.000Z');
+    const result = isInQuietHours(
+      { start: '10:00', end: '12:00', tz: 'UTC' },
+      now
+    );
+    expect(result).toBe(false);
   });
 
-  it('handles overnight range', () => {
-    const sub = {
-      quietHours: { start: '22:00', end: '07:00', tz: 'UTC' },
-    };
-    const result = inQuietHours(sub);
-    expect(typeof result).toBe('boolean');
+  it('handles overnight windows', () => {
+    const lateNight = isInQuietHours(
+      { start: '22:00', end: '07:00', tz: 'UTC' },
+      new Date('2026-01-01T23:30:00.000Z')
+    );
+    const earlyMorning = isInQuietHours(
+      { start: '22:00', end: '07:00', tz: 'UTC' },
+      new Date('2026-01-01T06:59:00.000Z')
+    );
+    const daytime = isInQuietHours(
+      { start: '22:00', end: '07:00', tz: 'UTC' },
+      new Date('2026-01-01T12:00:00.000Z')
+    );
+
+    expect(lateNight).toBe(true);
+    expect(earlyMorning).toBe(true);
+    expect(daytime).toBe(false);
   });
 
-  it('returns boolean type', () => {
-    const tests = [
-      { quietHours: { start: '00:00', end: '00:01', tz: 'UTC' } },
-      { quietHours: { start: '23:59', end: '23:58', tz: 'UTC' } },
-    ];
-    for (const sub of tests) {
-      expect(typeof inQuietHours(sub)).toBe('boolean');
-    }
+  it('resolves timezone-aware windows', () => {
+    const now = new Date('2026-01-01T21:30:00.000Z');
+    const result = isInQuietHours(
+      { start: '22:00', end: '23:00', tz: 'Europe/Berlin' },
+      now
+    );
+    expect(result).toBe(true);
+  });
+});
+
+describe('isValidQuietHours', () => {
+  it('validates format and timezone', () => {
+    expect(isValidQuietHours({ start: '22:00', end: '07:00', tz: 'UTC' })).toBe(true);
+    expect(isValidQuietHours({ start: '25:00', end: '07:00', tz: 'UTC' })).toBe(false);
+    expect(isValidQuietHours({ start: '22:00', end: '07:00', tz: 'Invalid/Zone' })).toBe(false);
   });
 });

@@ -13,21 +13,7 @@ import { sendPush, isInvalidTokenError } from './fcm.js';
 import { incrementPushCount, getPushCount } from '../redis/locks.js';
 import type { WhaleDto, AlertSubscription } from '../shared/types.js';
 import { pushesSentTotal } from '../observability.js';
-
-function inQuietHours(sub: { quietHours?: { start: string; end: string; tz: string } | null }): boolean {
-  if (!sub.quietHours) return false;
-
-  const now = new Date();
-  const local = new Date(now.toLocaleString('en-US', { timeZone: sub.quietHours.tz }));
-  const mins = local.getHours() * 60 + local.getMinutes();
-  const [sh, sm] = sub.quietHours.start.split(':').map(Number);
-  const [eh, em] = sub.quietHours.end.split(':').map(Number);
-  const start = sh * 60 + sm;
-  const end = eh * 60 + em;
-
-  if (start <= end) return mins >= start && mins < end;
-  return mins >= start || mins < end;
-}
+import { isInQuietHours } from '../alerts/quiet_hours.js';
 
 function formatUsdShort(usdSize: number): string {
   if (usdSize >= 1_000_000) return `$${(usdSize / 1_000_000).toFixed(1)}M`;
@@ -91,12 +77,11 @@ export function createDispatcher(redisSub: Redis, db: Db, config: Config) {
 
         const matching = await findMatchingSubscriptions(
           whale.usdSize,
-          whale.market?.category ?? '',
-          whale.tier
+          whale.market?.category ?? ''
         );
 
         for (const sub of matching) {
-          if (inQuietHours(sub)) continue;
+          if (isInQuietHours(sub.quietHours)) continue;
 
           const currentCount = await getPushCount(sub.userId);
           if (currentCount >= maxPushesPerHour) {

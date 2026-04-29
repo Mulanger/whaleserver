@@ -1,7 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { verifyToken, shouldRefreshToken, issueToken } from './jwt.js';
-import type { User } from '../shared/types.js';
-import { getDb } from '../db/mongo.js';
+import { verifyToken, shouldRefreshToken, issueTokenFromPayload } from './jwt.js';
 
 export async function handleSlidingExpiry(
   fastify: FastifyInstance,
@@ -16,18 +14,12 @@ export async function handleSlidingExpiry(
     const payload = verifyToken(fastify, token);
 
     if (shouldRefreshToken(payload)) {
-      const db = getDb();
-      const user = await db.collection('users').findOne({ _id: payload.sub });
-      if (user) {
-        const newToken = issueToken(fastify, {
-          _id: user._id,
-          type: user.type as 'anonymous' | 'user',
-          platform: user.platform as 'ios' | 'android',
-          createdAt: user.createdAt,
-          lastSeenAt: user.lastSeenAt,
-        });
-        reply.header('X-New-Token', newToken);
-      }
+      const newToken = issueTokenFromPayload(fastify, {
+        sub: payload.sub,
+        platform: payload.platform ?? 'unknown',
+        type: payload.type,
+      });
+      reply.header('x-new-token', newToken);
     }
   } catch {
     // ignore auth errors for sliding expiry
