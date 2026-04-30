@@ -4,6 +4,7 @@ import type { WhaleDto, WhaleFilter } from '../shared/types.js';
 import { matches } from './filters.js';
 import { logger } from '../logger.js';
 import { wsConnectionsTotal, wsConnectionsActive } from '../observability.js';
+import { normalizeWhaleMessage } from '../shared/whale_message.js';
 import { withPriceMillicents } from '../shared/whale_price.js';
 
 interface ClientEntry {
@@ -29,7 +30,9 @@ export function createHub(redisSub: Redis) {
   redisSub.on('message', (_channel: string, message: string) => {
     let whale: WhaleDto;
     try {
-      whale = withPriceMillicents(JSON.parse(message)) as WhaleDto;
+      const parsed = normalizeWhaleMessage(JSON.parse(message));
+      if (!parsed) return;
+      whale = parsed;
     } catch {
       return;
     }

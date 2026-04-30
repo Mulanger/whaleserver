@@ -14,6 +14,7 @@ import { incrementPushCount, getPushCount } from '../redis/locks.js';
 import type { WhaleDto, AlertSubscription } from '../shared/types.js';
 import { pushesSentTotal } from '../observability.js';
 import { isInQuietHours } from '../alerts/quiet_hours.js';
+import { normalizeWhaleMessage } from '../shared/whale_message.js';
 
 function formatUsdShort(usdSize: number): string {
   if (usdSize >= 1_000_000) return `$${(usdSize / 1_000_000).toFixed(1)}M`;
@@ -37,8 +38,8 @@ async function maybeSendPush(
     await sendPush(
       sub.fcmToken,
       {
-        title: `🐋 ${formatUsdShort(whale.usdSize)} ${whale.side} whale`,
-        body: `${whale.market?.title ?? 'Unknown'} · ${whale.outcome} @ ${whale.priceCents}¢`,
+        title: `Whale alert: ${formatUsdShort(whale.usdSize)} ${whale.side}`,
+        body: `${whale.market?.title ?? 'Unknown'} - ${whale.outcome} @ ${whale.priceCents}c`,
       },
       { type: 'whale', tradeId: whale.id }
     );
@@ -65,11 +66,15 @@ export function createDispatcher(redisSub: Redis, db: Db, config: Config) {
       redisSub.on('message', async (channel: string, message: string) => {
         if (channel !== config.REDIS_CHANNEL) return;
 
-        let whale: WhaleDto;
+        let whale: WhaleDto | null;
         try {
-          whale = JSON.parse(message) as WhaleDto;
+          whale = normalizeWhaleMessage(JSON.parse(message));
         } catch {
           logger.warn({ message }, 'failed to parse whale from redis');
+          return;
+        }
+        if (!whale) {
+          logger.warn({ message }, 'redis whale missing id');
           return;
         }
 
