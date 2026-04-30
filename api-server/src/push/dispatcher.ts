@@ -12,7 +12,7 @@ import {
 import { sendPush, isInvalidTokenError } from './fcm.js';
 import { incrementPushCount, getPushCount } from '../redis/locks.js';
 import type { WhaleDto, AlertSubscription } from '../shared/types.js';
-import { pushesSentTotal } from '../observability.js';
+import { pushFailuresTotal, pushSkipsTotal, pushesSentTotal } from '../observability.js';
 import { isInQuietHours } from '../alerts/quiet_hours.js';
 import { normalizeWhaleMessage } from '../shared/whale_message.js';
 
@@ -30,6 +30,7 @@ async function maybeSendPush(
 ): Promise<void> {
   const acquired = await tryInsertNotificationLog(whale.id, sub.fcmToken);
   if (!acquired) {
+    pushSkipsTotal.inc({ reason: 'duplicate_notification' });
     logger.debug({ whaleId: whale.id, fcmToken: sub.fcmToken }, 'notification already sent by another instance');
     return;
   }
@@ -51,6 +52,7 @@ async function maybeSendPush(
     const errorCode = (e as { code?: string }).code ?? 'unknown';
     await markNotificationFailed(whale.id, sub.fcmToken, errorCode);
     pushesSentTotal.inc({ platform: sub.platform, result: 'failed' });
+    pushFailuresTotal.inc({ platform: sub.platform, code: errorCode });
     if (isInvalidTokenError(e)) {
       logger.warn({ fcmToken: sub.fcmToken }, 'invalid FCM token, removing subscription');
       await deleteSubscription(sub._id);
@@ -86,11 +88,21 @@ export function createDispatcher(redisSub: Redis, db: Db, config: Config) {
         );
 
         for (const sub of matching) {
-          if (isInQuietHours(sub.quietHours)) continue;
+          if (isInQuietHours(sub.quietHours)) {
+            pushSkipsTotal.inc({ reason: 'quiet_hours' });
+            logger.debug({ whaleId: whale.id, userId: sub.userId }, 'push skipped during quiet hours');
+            continue;
+          }
 
           const currentCount = await getPushCount(sub.userId);
           if (currentCount >= maxPushesPerHour) {
-            logger.debug({ userId: sub.userId }, 'push rate limit exceeded for user');
+            pushSkipsTotal.inc({ reason: 'rate_limit' });
+            logger.info({
+              whaleId: whale.id,
+              userId: sub.userId,
+              currentCount,
+              maxPushesPerHour,
+            }, 'push skipped because user hourly rate limit was reached');
             continue;
           }
 

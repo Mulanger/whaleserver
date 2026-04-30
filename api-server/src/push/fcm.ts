@@ -29,6 +29,8 @@ export async function sendPush(
   data: Record<string, string>
 ): Promise<void> {
   const app = getFcmApp();
+  const ttlMs = config.FCM_MESSAGE_TTL_SECONDS * 1000;
+  const apnsExpiration = String(Math.floor(Date.now() / 1000) + config.FCM_MESSAGE_TTL_SECONDS);
 
   if (!app) {
     logger.info({ token, notification }, 'mock push sent');
@@ -42,9 +44,14 @@ export async function sendPush(
       data,
       apns: {
         payload: { aps: { sound: 'default', 'mutable-content': 1 } },
-        headers: { 'apns-priority': '10', 'apns-push-type': 'alert' },
+        headers: {
+          'apns-priority': '10',
+          'apns-push-type': 'alert',
+          'apns-expiration': apnsExpiration,
+        },
       },
       android: {
+        ttl: ttlMs,
         priority: 'high',
         notification: {
           channelId: 'whale_alerts',

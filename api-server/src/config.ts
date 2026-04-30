@@ -14,6 +14,7 @@ const envSchema = z.object({
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
   FIREBASE_PRIVATE_KEY: z.string().optional(),
+  FCM_MESSAGE_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   CORS_ORIGINS: z.string().default('https://polywatch.app,https://www.polywatch.app'),
   MAX_PUSHES_PER_USER_PER_HOUR: z.coerce.number().int().positive().default(5),
   SENTRY_DSN: z.string().url().optional().or(z.literal('')),

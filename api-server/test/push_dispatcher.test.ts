@@ -15,6 +15,45 @@ const sendPushMock = vi.fn();
 const incrementPushCountMock = vi.fn();
 const getPushCountMock = vi.fn();
 
+function makeSubscription(overrides: Record<string, unknown> = {}) {
+  return {
+    _id: 'sub-1',
+    userId: 'user-1',
+    fcmToken: 'fcm-token-1',
+    platform: 'android',
+    minUsd: 10000,
+    megaOnly: false,
+    categories: [],
+    quietHours: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    lastNotifiedAt: null,
+    ...overrides,
+  };
+}
+
+function emitWhale(redisSub: EventEmitter) {
+  redisSub.emit('message', 'whales', JSON.stringify({
+    _id: 'real-whale-1',
+    tier: 'mini',
+    side: 'BUY',
+    outcome: 'Yes',
+    usdSize: 12500,
+    shares: 25000,
+    priceCents: 50,
+    timestamp: 1777544540,
+    market: {
+      slug: 'market-slug',
+      title: 'Market title',
+      category: null,
+      polymarketUrl: 'https://polymarket.com/event/foo/bar',
+    },
+    trader: { proxyWallet: '0xabc' },
+    transactionHash: '0xtx',
+    raw: { price: 0.5 },
+  }));
+}
+
 vi.mock('../src/db/repos/alerts_repo.js', () => ({
   findMatchingSubscriptions: findMatchingSubscriptionsMock,
   updateLastNotified: updateLastNotifiedMock,
@@ -48,21 +87,8 @@ describe('push dispatcher', () => {
   it('normalizes watcher _id payloads before sending FCM data', async () => {
     const { createDispatcher } = await import('../src/push/dispatcher.js');
     const redisSub = new EventEmitter();
-    const subscription = {
-      _id: 'sub-1',
-      userId: 'user-1',
-      fcmToken: 'fcm-token-1',
-      platform: 'android',
-      minUsd: 10000,
-      megaOnly: false,
-      categories: [],
-      quietHours: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      lastNotifiedAt: null,
-    };
 
-    findMatchingSubscriptionsMock.mockResolvedValue([subscription]);
+    findMatchingSubscriptionsMock.mockResolvedValue([makeSubscription()]);
     getPushCountMock.mockResolvedValue(0);
     tryInsertNotificationLogMock.mockResolvedValue(true);
     sendPushMock.mockResolvedValue(undefined);
@@ -74,25 +100,7 @@ describe('push dispatcher', () => {
       MAX_PUSHES_PER_USER_PER_HOUR: 5,
     } as any).start();
 
-    redisSub.emit('message', 'whales', JSON.stringify({
-      _id: 'real-whale-1',
-      tier: 'mini',
-      side: 'BUY',
-      outcome: 'Yes',
-      usdSize: 12500,
-      shares: 25000,
-      priceCents: 50,
-      timestamp: 1777544540,
-      market: {
-        slug: 'market-slug',
-        title: 'Market title',
-        category: null,
-        polymarketUrl: 'https://polymarket.com/event/foo/bar',
-      },
-      trader: { proxyWallet: '0xabc' },
-      transactionHash: '0xtx',
-      raw: { price: 0.5 },
-    }));
+    emitWhale(redisSub);
 
     await vi.waitFor(() => {
       expect(sendPushMock).toHaveBeenCalledOnce();
@@ -103,5 +111,51 @@ describe('push dispatcher', () => {
       expect.objectContaining({ title: expect.stringContaining('$13K') }),
       { type: 'whale', tradeId: 'real-whale-1' }
     );
+  });
+
+  it('skips sends after the hourly user push cap is reached', async () => {
+    const { createDispatcher } = await import('../src/push/dispatcher.js');
+    const redisSub = new EventEmitter();
+
+    findMatchingSubscriptionsMock.mockResolvedValue([makeSubscription()]);
+    getPushCountMock.mockResolvedValue(5);
+
+    createDispatcher(redisSub as any, {} as any, {
+      REDIS_CHANNEL: 'whales',
+      MAX_PUSHES_PER_USER_PER_HOUR: 5,
+    } as any).start();
+
+    emitWhale(redisSub);
+
+    await vi.waitFor(() => {
+      expect(getPushCountMock).toHaveBeenCalledOnce();
+    });
+    expect(tryInsertNotificationLogMock).not.toHaveBeenCalled();
+    expect(sendPushMock).not.toHaveBeenCalled();
+  });
+
+  it('skips sends during quiet hours before rate-limit checks', async () => {
+    const { createDispatcher } = await import('../src/push/dispatcher.js');
+    const redisSub = new EventEmitter();
+
+    findMatchingSubscriptionsMock.mockResolvedValue([
+      makeSubscription({
+        quietHours: { start: '00:00', end: '00:00', tz: 'UTC' },
+      }),
+    ]);
+
+    createDispatcher(redisSub as any, {} as any, {
+      REDIS_CHANNEL: 'whales',
+      MAX_PUSHES_PER_USER_PER_HOUR: 5,
+    } as any).start();
+
+    emitWhale(redisSub);
+
+    await vi.waitFor(() => {
+      expect(findMatchingSubscriptionsMock).toHaveBeenCalledOnce();
+    });
+    expect(getPushCountMock).not.toHaveBeenCalled();
+    expect(tryInsertNotificationLogMock).not.toHaveBeenCalled();
+    expect(sendPushMock).not.toHaveBeenCalled();
   });
 });

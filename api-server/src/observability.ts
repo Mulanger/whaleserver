@@ -42,6 +42,20 @@ export const pushesSentTotal = new Counter({
   registers: [register],
 });
 
+export const pushSkipsTotal = new Counter({
+  name: 'push_skips_total',
+  help: 'Total push notifications skipped before sending',
+  labelNames: ['reason'],
+  registers: [register],
+});
+
+export const pushFailuresTotal = new Counter({
+  name: 'push_failures_total',
+  help: 'Total FCM push send failures by platform and error code',
+  labelNames: ['platform', 'code'],
+  registers: [register],
+});
+
 export function initSentry(): void {
   if (!config.SENTRY_DSN) {
     logger.info('Sentry DSN not configured, skipping Sentry initialization');
