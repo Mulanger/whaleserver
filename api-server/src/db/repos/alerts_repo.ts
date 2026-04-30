@@ -39,22 +39,24 @@ export async function upsertAlertSubscription(sub: {
     quietHours: sub.quietHours ?? null,
     updatedAt: now,
   };
+  const setOnInsert: Record<string, any> = {
+    userId: sub.userId,
+    fcmToken: sub.fcmToken,
+    createdAt: now,
+    lastNotifiedAt: null,
+  };
 
   if (sub.platform && sub.platform !== 'unknown') {
     setPayload.platform = sub.platform;
+  } else {
+    setOnInsert.platform = 'unknown';
   }
 
   await db.collection('alert_subscriptions').updateOne(
     { userId: sub.userId, fcmToken: sub.fcmToken },
     {
       $set: setPayload,
-      $setOnInsert: {
-        userId: sub.userId,
-        fcmToken: sub.fcmToken,
-        platform: sub.platform ?? 'unknown',
-        createdAt: now,
-        lastNotifiedAt: null,
-      },
+      $setOnInsert: setOnInsert,
     },
     { upsert: true }
   );
