@@ -46,7 +46,12 @@ export async function sendPush(
       },
       android: {
         priority: 'high',
-        notification: { channelId: 'whale_alerts', sound: 'default' },
+        notification: {
+          channelId: 'whale_alerts',
+          sound: 'default',
+          icon: 'ic_stat_whale_alert',
+          color: '#12B981',
+        },
       },
     });
   } catch (e) {
