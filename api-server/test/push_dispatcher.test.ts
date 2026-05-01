@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 process.env.NODE_ENV = 'test';
 process.env.MONGO_URI = 'mongodb://localhost:27017';
@@ -14,6 +14,8 @@ const markNotificationFailedMock = vi.fn();
 const sendPushMock = vi.fn();
 const incrementPushCountMock = vi.fn();
 const getPushCountMock = vi.fn();
+const isUserFollowingMock = vi.fn();
+let createDispatcher: typeof import('../src/push/dispatcher.js').createDispatcher;
 
 function makeSubscription(overrides: Record<string, unknown> = {}) {
   return {
@@ -23,6 +25,7 @@ function makeSubscription(overrides: Record<string, unknown> = {}) {
     platform: 'android',
     minUsd: 10000,
     megaOnly: false,
+    followingOnly: false,
     categories: [],
     quietHours: null,
     createdAt: new Date(),
@@ -72,7 +75,15 @@ vi.mock('../src/redis/locks.js', () => ({
   getPushCount: getPushCountMock,
 }));
 
+vi.mock('../src/db/repos/follows_repo.js', () => ({
+  isUserFollowing: isUserFollowingMock,
+}));
+
 describe('push dispatcher', () => {
+  beforeAll(async () => {
+    ({ createDispatcher } = await import('../src/push/dispatcher.js'));
+  });
+
   beforeEach(() => {
     findMatchingSubscriptionsMock.mockReset();
     updateLastNotifiedMock.mockReset();
@@ -82,10 +93,10 @@ describe('push dispatcher', () => {
     sendPushMock.mockReset();
     incrementPushCountMock.mockReset();
     getPushCountMock.mockReset();
+    isUserFollowingMock.mockReset();
   });
 
   it('normalizes watcher _id payloads before sending FCM data', async () => {
-    const { createDispatcher } = await import('../src/push/dispatcher.js');
     const redisSub = new EventEmitter();
 
     findMatchingSubscriptionsMock.mockResolvedValue([makeSubscription()]);
@@ -114,7 +125,6 @@ describe('push dispatcher', () => {
   });
 
   it('skips sends after the hourly user push cap is reached', async () => {
-    const { createDispatcher } = await import('../src/push/dispatcher.js');
     const redisSub = new EventEmitter();
 
     findMatchingSubscriptionsMock.mockResolvedValue([makeSubscription()]);
@@ -135,7 +145,6 @@ describe('push dispatcher', () => {
   });
 
   it('skips sends during quiet hours before rate-limit checks', async () => {
-    const { createDispatcher } = await import('../src/push/dispatcher.js');
     const redisSub = new EventEmitter();
 
     findMatchingSubscriptionsMock.mockResolvedValue([
@@ -153,6 +162,55 @@ describe('push dispatcher', () => {
 
     await vi.waitFor(() => {
       expect(findMatchingSubscriptionsMock).toHaveBeenCalledOnce();
+    });
+    expect(getPushCountMock).not.toHaveBeenCalled();
+    expect(tryInsertNotificationLogMock).not.toHaveBeenCalled();
+    expect(sendPushMock).not.toHaveBeenCalled();
+  });
+
+  it('sends following-only alerts when the whale trader is followed', async () => {
+    const redisSub = new EventEmitter();
+
+    findMatchingSubscriptionsMock.mockResolvedValue([
+      makeSubscription({ followingOnly: true }),
+    ]);
+    isUserFollowingMock.mockResolvedValue(true);
+    getPushCountMock.mockResolvedValue(0);
+    tryInsertNotificationLogMock.mockResolvedValue(true);
+    sendPushMock.mockResolvedValue(undefined);
+    incrementPushCountMock.mockResolvedValue(1);
+    updateLastNotifiedMock.mockResolvedValue(undefined);
+
+    createDispatcher(redisSub as any, {} as any, {
+      REDIS_CHANNEL: 'whales',
+      MAX_PUSHES_PER_USER_PER_HOUR: 5,
+    } as any).start();
+
+    emitWhale(redisSub);
+
+    await vi.waitFor(() => {
+      expect(sendPushMock).toHaveBeenCalledOnce();
+    });
+    expect(isUserFollowingMock).toHaveBeenCalledWith('user-1', '0xabc');
+  });
+
+  it('skips following-only alerts when the whale trader is not followed', async () => {
+    const redisSub = new EventEmitter();
+
+    findMatchingSubscriptionsMock.mockResolvedValue([
+      makeSubscription({ followingOnly: true }),
+    ]);
+    isUserFollowingMock.mockResolvedValue(false);
+
+    createDispatcher(redisSub as any, {} as any, {
+      REDIS_CHANNEL: 'whales',
+      MAX_PUSHES_PER_USER_PER_HOUR: 5,
+    } as any).start();
+
+    emitWhale(redisSub);
+
+    await vi.waitFor(() => {
+      expect(isUserFollowingMock).toHaveBeenCalledOnce();
     });
     expect(getPushCountMock).not.toHaveBeenCalled();
     expect(tryInsertNotificationLogMock).not.toHaveBeenCalled();

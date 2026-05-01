@@ -14,6 +14,7 @@ const subscribeSchema = z.object({
   fcmToken: z.string().min(1),
   minUsd: z.number(),
   megaOnly: z.boolean(),
+  followingOnly: z.boolean().optional().default(false),
   categories: z.array(z.enum(ALERT_CATEGORIES)),
   quietHours: z
     .object({
@@ -65,13 +66,14 @@ export async function registerAlertsRoutes(fastify: FastifyInstance) {
     }
 
     const user = authUser(request);
-    const { fcmToken, minUsd, megaOnly, categories, quietHours } = body.data;
+    const { fcmToken, minUsd, megaOnly, followingOnly, categories, quietHours } = body.data;
 
     await subscribeToAlerts({
       userId: user.sub,
       fcmToken,
       minUsd,
       megaOnly,
+      followingOnly,
       categories,
       quietHours,
       platform: user.platform,
@@ -105,6 +107,7 @@ export async function registerAlertsRoutes(fastify: FastifyInstance) {
         fcmToken: sub.fcmToken,
         minUsd: sub.minUsd,
         megaOnly: sub.megaOnly,
+        followingOnly: sub.followingOnly,
         categories: sub.categories,
         quietHours: sub.quietHours ?? null,
       },

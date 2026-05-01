@@ -7,6 +7,7 @@ interface StoredSubscription {
   fcmToken: string;
   minUsd: number;
   megaOnly: boolean;
+  followingOnly: boolean;
   categories: string[];
   quietHours?: { start: string; end: string; tz: string } | null;
 }
@@ -33,6 +34,7 @@ const subscribeToAlertsMock = vi.fn(async (input: StoredSubscription & { platfor
     fcmToken: input.fcmToken,
     minUsd: input.minUsd,
     megaOnly: input.megaOnly,
+    followingOnly: input.followingOnly,
     categories: input.categories,
     quietHours: input.quietHours ?? null,
   });
@@ -152,6 +154,7 @@ describe('/v1/alerts lifecycle', () => {
         fcmToken: 'token-1',
         minUsd: 25000,
         megaOnly: true,
+        followingOnly: true,
         categories: ['Crypto'],
         quietHours: { start: '22:00', end: '07:00', tz: 'UTC' },
       },
@@ -170,6 +173,7 @@ describe('/v1/alerts lifecycle', () => {
         fcmToken: 'token-1',
         minUsd: 25000,
         megaOnly: true,
+        followingOnly: true,
         categories: ['Crypto'],
         quietHours: { start: '22:00', end: '07:00', tz: 'UTC' },
       },
@@ -251,4 +255,3 @@ describe('/v1/alerts lifecycle', () => {
     await app.close();
   });
 });
-

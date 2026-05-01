@@ -24,6 +24,7 @@ describe('upsertAlertSubscription', () => {
       platform: 'ios',
       minUsd: 50000,
       megaOnly: false,
+      followingOnly: false,
       categories: ['Crypto'],
       quietHours: null,
     });
@@ -35,6 +36,7 @@ describe('upsertAlertSubscription', () => {
     };
 
     expect(updateDoc.$set.platform).toBe('ios');
+    expect(updateDoc.$set.followingOnly).toBe(false);
     expect(updateDoc.$setOnInsert.platform).toBeUndefined();
   });
 
@@ -45,6 +47,7 @@ describe('upsertAlertSubscription', () => {
       platform: 'unknown',
       minUsd: 25000,
       megaOnly: true,
+      followingOnly: true,
       categories: [],
       quietHours: null,
     });
@@ -56,6 +59,7 @@ describe('upsertAlertSubscription', () => {
     };
 
     expect(updateDoc.$set.platform).toBeUndefined();
+    expect(updateDoc.$set.followingOnly).toBe(true);
     expect(updateDoc.$setOnInsert.platform).toBe('unknown');
   });
 });

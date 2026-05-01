@@ -13,6 +13,7 @@ function mapAlertSubscription(doc: Record<string, any>): AlertSubscription {
     platform: (doc.platform as MobilePlatform | undefined) ?? 'unknown',
     minUsd: doc.minUsd,
     megaOnly: doc.megaOnly,
+    followingOnly: doc.followingOnly ?? false,
     categories: doc.categories,
     quietHours: doc.quietHours,
     createdAt: doc.createdAt,
@@ -27,6 +28,7 @@ export async function upsertAlertSubscription(sub: {
   platform?: MobilePlatform;
   minUsd: number;
   megaOnly: boolean;
+  followingOnly: boolean;
   categories: string[];
   quietHours?: { start: string; end: string; tz: string } | null;
 }): Promise<void> {
@@ -35,6 +37,7 @@ export async function upsertAlertSubscription(sub: {
   const setPayload: Record<string, any> = {
     minUsd: sub.minUsd,
     megaOnly: sub.megaOnly,
+    followingOnly: sub.followingOnly,
     categories: sub.categories,
     quietHours: sub.quietHours ?? null,
     updatedAt: now,

@@ -74,6 +74,7 @@ export interface AlertSubscription {
   platform: MobilePlatform;
   minUsd: number;
   megaOnly: boolean;
+  followingOnly: boolean;
   categories: string[];
   quietHours?: {
     start: string;

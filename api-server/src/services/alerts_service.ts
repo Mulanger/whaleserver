@@ -11,6 +11,7 @@ export interface SubscribeInput {
   fcmToken: string;
   minUsd: number;
   megaOnly: boolean;
+  followingOnly: boolean;
   categories: string[];
   quietHours?: { start: string; end: string; tz: string } | null;
   platform?: MobilePlatform;
@@ -23,6 +24,7 @@ export async function subscribeToAlerts(input: SubscribeInput): Promise<void> {
     platform: input.platform,
     minUsd: input.minUsd,
     megaOnly: input.megaOnly,
+    followingOnly: input.followingOnly,
     categories: input.categories,
     quietHours: input.quietHours,
   });
@@ -43,4 +45,3 @@ export async function unsubscribeFromAlerts(
 export async function getHydrationSubscription(userId: string) {
   return getLatestAlertSubscriptionForUser(userId);
 }
-

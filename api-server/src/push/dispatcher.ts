@@ -9,6 +9,7 @@ import {
   tryInsertNotificationLog,
   markNotificationFailed,
 } from '../db/repos/alerts_repo.js';
+import { isUserFollowing } from '../db/repos/follows_repo.js';
 import { sendPush, isInvalidTokenError } from './fcm.js';
 import { incrementPushCount, getPushCount } from '../redis/locks.js';
 import type { WhaleDto, AlertSubscription } from '../shared/types.js';
@@ -20,6 +21,44 @@ function formatUsdShort(usdSize: number): string {
   if (usdSize >= 1_000_000) return `$${(usdSize / 1_000_000).toFixed(1)}M`;
   if (usdSize >= 1_000) return `$${(usdSize / 1_000).toFixed(0)}K`;
   return `$${usdSize}`;
+}
+
+async function shouldSendForFollowingFilter(
+  whale: WhaleDto,
+  sub: AlertSubscription
+): Promise<boolean> {
+  if (!sub.followingOnly) {
+    return true;
+  }
+
+  const proxyWallet = whale.trader?.proxyWallet;
+  if (!proxyWallet) {
+    pushSkipsTotal.inc({ reason: 'following_only_missing_trader' });
+    logger.debug({ whaleId: whale.id, userId: sub.userId }, 'push skipped because following-only alert has no trader wallet');
+    return false;
+  }
+
+  try {
+    const isFollowing = await isUserFollowing(sub.userId, proxyWallet);
+    if (!isFollowing) {
+      pushSkipsTotal.inc({ reason: 'following_only_not_following' });
+      logger.debug({
+        whaleId: whale.id,
+        userId: sub.userId,
+        proxyWallet,
+      }, 'push skipped because trader is not followed by user');
+    }
+    return isFollowing;
+  } catch (e) {
+    pushSkipsTotal.inc({ reason: 'following_lookup_error' });
+    logger.warn({
+      err: e,
+      whaleId: whale.id,
+      userId: sub.userId,
+      proxyWallet,
+    }, 'push skipped because following lookup failed');
+    return false;
+  }
 }
 
 async function maybeSendPush(
@@ -91,6 +130,10 @@ export function createDispatcher(redisSub: Redis, db: Db, config: Config) {
           if (isInQuietHours(sub.quietHours)) {
             pushSkipsTotal.inc({ reason: 'quiet_hours' });
             logger.debug({ whaleId: whale.id, userId: sub.userId }, 'push skipped during quiet hours');
+            continue;
+          }
+
+          if (!(await shouldSendForFollowingFilter(whale, sub))) {
             continue;
           }
 
