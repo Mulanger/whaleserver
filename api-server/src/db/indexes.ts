@@ -38,13 +38,5 @@ export async function ensureIndexes(): Promise<void> {
   ]);
   logger.info('created indexes on trader_follows');
 
-  const trades = db.collection('trades');
-  await trades.createIndexes([
-    { key: { 'market.conditionId': 1, timestamp: -1 }, name: 'idx_trades_marketCondition_time' },
-    { key: { 'market.slug': 1, timestamp: -1 }, name: 'idx_trades_marketSlug_time' },
-    { key: { 'market.title': 1, timestamp: -1 }, name: 'idx_trades_marketTitle_time' },
-  ]);
-  logger.info('created indexes on trades for market-related lookups');
-
   logger.info('all MongoDB indexes ensured');
 }
