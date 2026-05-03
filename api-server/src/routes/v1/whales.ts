@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
-import { getWhales, getWhaleById } from '../../db/repos/whales_repo.js';
+import { getWhales, getWhaleById, getWhaleDetailById } from '../../db/repos/whales_repo.js';
 import type { WhaleFilter, Cursor } from '../../shared/types.js';
 import { verifyToken, extractUserId } from '../../auth/jwt.js';
 import { getFollowedWallets } from '../../db/repos/follows_repo.js';
@@ -73,6 +73,14 @@ export async function registerWhalesRoutes(fastify: FastifyInstance) {
     const result = await getWhales(filter, cursor, q.limit);
 
     return reply.send(result);
+  });
+
+  fastify.get<{ Params: { id: string } }>('/:id/detail', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const detail = await getWhaleDetailById(request.params.id);
+    if (!detail) {
+      return reply.status(404).send({ error: 'whale not found' });
+    }
+    return reply.send(detail);
   });
 
   fastify.get<{ Params: { id: string } }>('/:id', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request, reply) => {
