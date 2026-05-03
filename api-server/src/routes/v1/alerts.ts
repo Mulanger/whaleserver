@@ -8,6 +8,8 @@ import {
   unsubscribeFromAlerts,
   getHydrationSubscription,
 } from '../../services/alerts_service.js';
+import { sendPush, isInvalidTokenError } from '../../push/fcm.js';
+import { deleteSubscription } from '../../db/repos/alerts_repo.js';
 import type { JwtPayload } from '../../auth/jwt.js';
 
 const subscribeSchema = z.object({
@@ -111,6 +113,38 @@ export async function registerAlertsRoutes(fastify: FastifyInstance) {
         categories: sub.categories,
         quietHours: sub.quietHours ?? null,
       },
+    });
+  });
+
+  fastify.post('/test', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const user = authUser(request);
+    const sub = await getHydrationSubscription(user.sub);
+
+    if (!sub) {
+      return reply.status(404).send({ error: 'subscription not found' });
+    }
+
+    try {
+      await sendPush(
+        sub.fcmToken,
+        {
+          title: 'Polywatch test alert',
+          body: `This browser is subscribed for whale trades over $${sub.minUsd.toLocaleString('en-US')}.`,
+        },
+        { type: 'test', url: '/alerts' }
+      );
+    } catch (e) {
+      const code = (e as { code?: string }).code ?? 'unknown';
+      if (isInvalidTokenError(e)) {
+        await deleteSubscription(sub._id);
+      }
+      return reply.status(502).send({ error: 'push send failed', code });
+    }
+
+    return reply.send({
+      ok: true,
+      platform: sub.platform,
+      minUsd: sub.minUsd,
     });
   });
 }
