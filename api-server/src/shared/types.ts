@@ -1,4 +1,4 @@
-export type MobilePlatform = 'ios' | 'android' | 'unknown';
+export type MobilePlatform = 'ios' | 'android' | 'web' | 'unknown';
 
 export interface WhaleDto {
   id: string;

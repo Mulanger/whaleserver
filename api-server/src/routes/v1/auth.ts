@@ -4,7 +4,7 @@ import { issueAnonymousToken } from '../../services/auth_service.js';
 
 const anonymousSchema = z.object({
   deviceId: z.string().uuid(),
-  platform: z.enum(['ios', 'android', 'unknown']),
+  platform: z.enum(['ios', 'android', 'web', 'unknown']),
 });
 
 export async function registerAuthRoutes(fastify: FastifyInstance) {

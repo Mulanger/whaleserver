@@ -60,6 +60,13 @@ export async function sendPush(
           color: '#12B981',
         },
       },
+      webpush: {
+        notification: {
+          icon: '/assets/polywatch-icon.png',
+          badge: '/assets/polywatch-icon.png',
+          tag: data.tradeId ? `polywatch-whale-${data.tradeId}` : 'polywatch-whale-alert',
+        },
+      },
     });
   } catch (e) {
     logger.error({ error: e, token }, 'failed to send FCM push');

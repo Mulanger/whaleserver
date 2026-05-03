@@ -81,7 +81,7 @@ async function maybeSendPush(
         title: `Whale alert: ${formatUsdShort(whale.usdSize)} ${whale.side}`,
         body: `${whale.market?.title ?? 'Unknown'} - ${whale.outcome} @ ${whale.priceCents}c`,
       },
-      { type: 'whale', tradeId: whale.id }
+      { type: 'whale', tradeId: whale.id, url: `/trade/${whale.id}` }
     );
     await incrementPushCount(sub.userId);
     await updateLastNotified(sub._id);

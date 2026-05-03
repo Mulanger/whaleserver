@@ -75,7 +75,7 @@ Request:
 }
 ```
 
-Allowed `platform` values: `"ios" | "android" | "unknown"`.
+Allowed `platform` values: `"ios" | "android" | "web" | "unknown"`.
 
 Response `200`:
 
@@ -108,6 +108,7 @@ Request:
 
 Notes:
 - Upsert key: `(userId, fcmToken)`.
+- `fcmToken` can be a mobile app token or a Firebase Web Messaging browser token.
 - `categories: []` means all categories.
 - `quietHours` is optional.
 
