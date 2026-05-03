@@ -1,8 +1,9 @@
 import { getDb } from '../mongo.js';
 import { toWhaleDto } from './whales_repo.js';
 import { isUserFollowing } from './follows_repo.js';
+import { getNewYorkWindow } from '../../shared/ny_session.js';
 
-export type LeaderboardWindow = '7d' | '30d' | '365d';
+export type LeaderboardWindow = '1d' | '7d' | '30d' | '365d';
 
 interface TraderDailyStatsDoc {
   _id: string;
@@ -79,11 +80,13 @@ export interface TraderProfile {
 const LEADERBOARD_CACHE_TTL_MS = 60_000;
 const PROFILE_CACHE_TTL_MS = 30_000;
 const MAX_CACHED_ROWS = 500;
+const WHALE_USD_FLOOR = 10_000;
 
 const leaderboardCache = new Map<LeaderboardWindow, LeaderboardCacheEntry>();
 const traderProfileCache = new Map<string, { expiresAt: number; data: TraderProfile }>();
 
 const WINDOW_DAYS: Record<LeaderboardWindow, number> = {
+  '1d': 1,
   '7d': 7,
   '30d': 30,
   '365d': 365,
@@ -124,23 +127,29 @@ function shortAddress(wallet: string): string {
 
 async function computeLeaderboard(window: LeaderboardWindow): Promise<LeaderboardCacheEntry> {
   const db = getDb();
-  const startDate = startDateForWindow(WINDOW_DAYS[window]);
+  const session = getNewYorkWindow(WINDOW_DAYS[window]);
 
-  const rows = await db.collection<TraderDailyStatsDoc>('trader_daily_stats').aggregate<LeaderboardAggregateRow>([
-    { $match: { date: { $gte: startDate } } },
-    { $sort: { date: 1 } },
+  const rows = await db.collection('trades').aggregate<LeaderboardAggregateRow>([
     {
-      $group: {
-        _id: '$proxyWallet',
-        pseudonym: { $last: '$pseudonym' },
-        volume: { $sum: '$volume' },
-        tradeCount: { $sum: '$tradeCount' },
-        whaleCount: { $sum: '$whaleCount' },
+      $match: {
+        timestamp: { $gte: session.startTs, $lt: session.endTs },
+        usdSize: { $gte: WHALE_USD_FLOOR },
+        'trader.proxyWallet': { $type: 'string', $ne: '' },
       },
     },
-    { $sort: { volume: -1 } },
+    { $sort: { timestamp: 1 } },
+    {
+      $group: {
+        _id: { $toLower: '$trader.proxyWallet' },
+        pseudonym: { $last: '$trader.pseudonym' },
+        volume: { $sum: '$usdSize' },
+        tradeCount: { $sum: 1 },
+        whaleCount: { $sum: 1 },
+      },
+    },
+    { $sort: { volume: -1, _id: 1 } },
     { $limit: MAX_CACHED_ROWS },
-  ]).toArray();
+  ], { allowDiskUse: true }).toArray();
 
   const items: LeaderboardItem[] = rows.map((row, index) => ({
     rank: index + 1,
@@ -202,17 +211,23 @@ function emptyStats(): TraderStatsWindow {
 
 async function aggregateWalletWindow(wallet: string, window: LeaderboardWindow): Promise<TraderStatsWindow> {
   const db = getDb();
-  const startDate = startDateForWindow(WINDOW_DAYS[window]);
-  const row = await db.collection<TraderDailyStatsDoc>('trader_daily_stats').aggregate<TraderStatsWindow>([
-    { $match: { proxyWallet: wallet, date: { $gte: startDate } } },
+  const session = getNewYorkWindow(WINDOW_DAYS[window]);
+  const row = await db.collection('trades').aggregate<TraderStatsWindow>([
+    {
+      $match: {
+        timestamp: { $gte: session.startTs, $lt: session.endTs },
+        usdSize: { $gte: WHALE_USD_FLOOR },
+        $expr: { $eq: [{ $toLower: '$trader.proxyWallet' }, wallet] },
+      },
+    },
     {
       $group: {
         _id: null,
-        volume: { $sum: '$volume' },
-        tradeCount: { $sum: '$tradeCount' },
-        whaleCount: { $sum: '$whaleCount' },
-        buyVolume: { $sum: '$buyVolume' },
-        sellVolume: { $sum: '$sellVolume' },
+        volume: { $sum: '$usdSize' },
+        tradeCount: { $sum: 1 },
+        whaleCount: { $sum: 1 },
+        buyVolume: { $sum: { $cond: [{ $eq: ['$side', 'BUY'] }, '$usdSize', 0] } },
+        sellVolume: { $sum: { $cond: [{ $eq: ['$side', 'SELL'] }, '$usdSize', 0] } },
       },
     },
     { $project: { _id: 0, volume: 1, tradeCount: 1, whaleCount: 1, buyVolume: 1, sellVolume: 1 } },
@@ -224,7 +239,7 @@ async function aggregateWalletWindow(wallet: string, window: LeaderboardWindow):
 async function getRankBadge(wallet: string): Promise<RankBadge | null> {
   let best: RankBadge | null = null;
 
-  for (const window of ['7d', '30d', '365d'] as const) {
+  for (const window of ['1d', '7d', '30d', '365d'] as const) {
     const snapshot = await getLeaderboardSnapshot(window);
     const found = snapshot.items.find((item) => item.proxyWallet === wallet);
     if (!found || found.rank > 100) continue;
@@ -241,7 +256,8 @@ async function loadTraderProfile(wallet: string, currentUserId?: string): Promis
   const db = getDb();
   const dailyStartDate = startDateForWindow(30);
 
-  const [stats7d, stats30d, stats365d, dailyVolumeRows, recentWhaleDocs, latestTradeDoc, firstTradeDoc, rankBadge, following] = await Promise.all([
+  const [stats1d, stats7d, stats30d, stats365d, dailyVolumeRows, recentWhaleDocs, latestTradeDoc, firstTradeDoc, rankBadge, following] = await Promise.all([
+    aggregateWalletWindow(wallet, '1d'),
     aggregateWalletWindow(wallet, '7d'),
     aggregateWalletWindow(wallet, '30d'),
     aggregateWalletWindow(wallet, '365d'),
@@ -280,6 +296,7 @@ async function loadTraderProfile(wallet: string, currentUserId?: string): Promis
     firstSeen: firstTradeDoc?.timestamp ?? latestTradeDoc.timestamp,
     rankBadge,
     stats: {
+      '1d': stats1d,
       '7d': stats7d,
       '30d': stats30d,
       '365d': stats365d,

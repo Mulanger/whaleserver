@@ -17,6 +17,10 @@ export interface NewYorkSession {
   nextResetTs: number;
 }
 
+export interface NewYorkWindow extends NewYorkSession {
+  days: number;
+}
+
 const formatter = new Intl.DateTimeFormat('en-US', {
   timeZone: NEW_YORK_TIMEZONE,
   year: 'numeric',
@@ -94,5 +98,23 @@ export function getCurrentNewYorkSession(nowMs = Date.now()): NewYorkSession {
     startTs: Math.floor(startMs / 1000),
     endTs: Math.floor(endMs / 1000),
     nextResetTs: Math.floor(endMs / 1000),
+  };
+}
+
+export function getNewYorkWindow(days: number, nowMs = Date.now()): NewYorkWindow {
+  const safeDays = Math.max(1, Math.floor(days));
+  const nowParts = getZonedParts(new Date(nowMs));
+  const startDay = addLocalDays(nowParts, -(safeDays - 1));
+  const tomorrow = addLocalDays(nowParts, 1);
+  const startMs = zonedTimeToUtcMs({ ...startDay, hour: 0, minute: 0, second: 0 });
+  const endMs = zonedTimeToUtcMs({ ...tomorrow, hour: 0, minute: 0, second: 0 });
+
+  return {
+    timezone: NEW_YORK_TIMEZONE,
+    dateKey: dateKey(nowParts),
+    startTs: Math.floor(startMs / 1000),
+    endTs: Math.floor(endMs / 1000),
+    nextResetTs: Math.floor(endMs / 1000),
+    days: safeDays,
   };
 }

@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { getLeaderboard } from '../../db/repos/leaderboard_repo.js';
 
 const leaderboardQuerySchema = z.object({
-  window: z.enum(['7d', '30d', '365d']).optional().default('7d'),
+  window: z.enum(['1d', '7d', '30d', '365d']).optional().default('1d'),
   limit: z.coerce.number().int().min(1).max(100).optional().default(50),
   cursor: z.string().optional(),
   fresh: z.coerce.boolean().optional().default(false),
