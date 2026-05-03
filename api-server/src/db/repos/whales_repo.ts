@@ -150,8 +150,10 @@ function buildScenario(doc: any) {
 function marketMatchFor(doc: any): Record<string, unknown> | null {
   const conditionId = doc.market?.conditionId;
   const slug = doc.market?.slug;
+  const title = doc.market?.title;
   if (conditionId) return { 'market.conditionId': conditionId };
   if (slug) return { 'market.slug': slug };
+  if (title) return { 'market.title': title };
   return null;
 }
 
@@ -257,7 +259,7 @@ export async function getWhaleDetailById(id: string) {
             _id: { $ne: doc._id },
           })
           .sort({ timestamp: -1, _id: -1 })
-          .limit(10)
+          .limit(50)
           .toArray()
       : Promise.resolve([]),
     match
