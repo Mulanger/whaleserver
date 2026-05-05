@@ -28,6 +28,7 @@
     "zod": "^3.0.0"
   },
   "devDependencies": {
+    "@railway/cli": "^4.43.0",
     "@types/node": "^22.0.0",
     "esbuild": "^0.24.2",
     "tsx": "^4.0.0",

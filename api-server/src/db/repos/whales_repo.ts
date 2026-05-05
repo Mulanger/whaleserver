@@ -3,6 +3,12 @@ import { getDb } from '../mongo.js';
 import type { WhaleDto, WhaleFilter, Cursor } from '../../shared/types.js';
 import { resolvePriceMillicents } from '../../shared/whale_price.js';
 import { getNewYorkWindow } from '../../shared/ny_session.js';
+import { config } from '../../config.js';
+import { logger } from '../../logger.js';
+import {
+  getOutcomesByTradeIds,
+  toOutcomeBlock,
+} from './outcomes_repo.js';
 
 const WHALE_USD_FLOOR = 10_000;
 
@@ -22,6 +28,34 @@ export function toWhaleDto(doc: any): WhaleDto {
     transactionHash: doc.transactionHash,
     polymarketUrl: doc.polymarketUrl,
   };
+}
+
+/**
+ * Best-effort merge of trade_outcomes rows onto a list of WhaleDtos.
+ * Failures are swallowed and logged — the resolver service is independent and
+ * the feed must keep working even if it's down.
+ *
+ * Behaviour:
+ *   - Off when config.OUTCOMES_IN_DTO is false.
+ *   - For trades with no outcome row, the dto is returned unchanged
+ *     (clients should treat absent `resolution` as "open").
+ */
+export async function mergeOutcomesIntoDtos(
+  dtos: WhaleDto[],
+): Promise<WhaleDto[]> {
+  if (!config.OUTCOMES_IN_DTO || dtos.length === 0) return dtos;
+  try {
+    const ids = dtos.map((d) => d.id);
+    const outcomes = await getOutcomesByTradeIds(ids);
+    if (outcomes.size === 0) return dtos;
+    return dtos.map((d) => {
+      const o = outcomes.get(d.id);
+      return o ? { ...d, resolution: toOutcomeBlock(o) } : d;
+    });
+  } catch (err) {
+    logger.warn({ err }, 'mergeOutcomesIntoDtos failed; returning unmerged');
+    return dtos;
+  }
 }
 
 export async function getWhales(
@@ -58,7 +92,8 @@ export async function getWhales(
     .toArray();
 
   const hasMore = docs.length > limit;
-  const items = (hasMore ? docs.slice(0, limit) : docs).map(toWhaleDto);
+  const sliced = (hasMore ? docs.slice(0, limit) : docs).map(toWhaleDto);
+  const items = await mergeOutcomesIntoDtos(sliced);
   const nextCursor = hasMore
     ? Buffer.from(
         JSON.stringify({
@@ -92,7 +127,8 @@ export async function getWhaleById(id: string): Promise<WhaleDto | null> {
     }
   }
 
-  return dto;
+  const [merged] = await mergeOutcomesIntoDtos([dto]);
+  return merged ?? dto;
 }
 
 function explorerUrl(transactionHash?: string): string | null {
@@ -282,33 +318,44 @@ export async function getWhaleDetailById(id: string) {
     getTraderOneDayStats(wallet),
   ]);
 
-  const relatedTrades = [doc, ...relatedDocs].map(toWhaleDto);
+  const relatedTradesRaw = [doc, ...relatedDocs].map(toWhaleDto);
+  const recentTraderRaw = recentTraderDocs.map(toWhaleDto);
+
+  // Merge resolver outcomes onto every dto we're about to return. One join
+  // per logical group keeps Mongo round-trips bounded.
+  const [relatedMerged, recentMerged, primaryMerged] = await Promise.all([
+    mergeOutcomesIntoDtos(relatedTradesRaw),
+    mergeOutcomesIntoDtos(recentTraderRaw),
+    mergeOutcomesIntoDtos([trade]),
+  ]);
+  const tradeMerged = primaryMerged[0] ?? trade;
+
   const historySource = historyDocs.some((historyDoc) => historyDoc._id?.toString?.() === id)
     ? historyDocs
     : [doc, ...historyDocs];
 
   return {
-    trade,
+    trade: tradeMerged,
     market: {
-      ...(trade.market || {}),
+      ...(tradeMerged.market || {}),
       yesPriceCents: doc.market?.yesPriceCents ?? null,
       noPriceCents: doc.market?.noPriceCents ?? null,
-      polymarketUrl: trade.polymarketUrl || doc.market?.polymarketUrl || null,
-      priceHistory: buildPriceHistory(historySource, trade.id),
+      polymarketUrl: tradeMerged.polymarketUrl || doc.market?.polymarketUrl || null,
+      priceHistory: buildPriceHistory(historySource, tradeMerged.id),
     },
     trader: {
-      ...(trade.trader || {}),
-      proxyWallet: wallet ?? trade.trader?.proxyWallet ?? null,
+      ...(tradeMerged.trader || {}),
+      proxyWallet: wallet ?? tradeMerged.trader?.proxyWallet ?? null,
       volume1d: traderStats.volume1d,
       rank1d: traderStats.rank1d,
       tradeCount1d: traderStats.tradeCount1d,
-      recentTrades: recentTraderDocs.map(toWhaleDto),
+      recentTrades: recentMerged,
     },
-    relatedTrades,
+    relatedTrades: relatedMerged,
     scenario: buildScenario(doc),
     onChain: {
-      transactionHash: trade.transactionHash,
-      explorerUrl: explorerUrl(trade.transactionHash),
+      transactionHash: tradeMerged.transactionHash,
+      explorerUrl: explorerUrl(tradeMerged.transactionHash),
     },
   };
 }

@@ -1,11 +1,16 @@
 import type { WebSocket } from 'ws';
 import type { Redis } from 'ioredis';
-import type { WhaleDto, WhaleFilter } from '../shared/types.js';
+import type {
+  WhaleDto,
+  WhaleFilter,
+  ResolutionEventPayload,
+} from '../shared/types.js';
 import { matches } from './filters.js';
 import { logger } from '../logger.js';
 import { wsConnectionsTotal, wsConnectionsActive } from '../observability.js';
 import { normalizeWhaleMessage } from '../shared/whale_message.js';
 import { withPriceMillicents } from '../shared/whale_price.js';
+import { config } from '../config.js';
 
 interface ClientEntry {
   socket: WebSocket;
@@ -27,26 +32,55 @@ export function createHub(redisSub: Redis) {
   const ipCounts = new Map<string, number>();
   let connCounter = 0;
 
-  redisSub.on('message', (_channel: string, message: string) => {
-    let whale: WhaleDto;
-    try {
-      const parsed = normalizeWhaleMessage(JSON.parse(message));
-      if (!parsed) return;
-      whale = parsed;
-    } catch {
+  redisSub.on('message', (channel: string, message: string) => {
+    // The subscriber listens on multiple channels — dispatch by name.
+    if (channel === config.REDIS_CHANNEL) {
+      let whale: WhaleDto;
+      try {
+        const parsed = normalizeWhaleMessage(JSON.parse(message));
+        if (!parsed) return;
+        whale = parsed;
+      } catch {
+        return;
+      }
+
+      for (const [connId, client] of clients) {
+        try {
+          if (matches(whale, client.filter)) {
+            if (client.socket.readyState === 1) {
+              client.socket.send(JSON.stringify({ type: 'whale', data: whale }));
+            }
+          }
+        } catch (e) {
+          logger.error({ e, connId }, 'error broadcasting to client');
+        }
+      }
       return;
     }
 
-    for (const [connId, client] of clients) {
+    if (channel === config.RESOLUTION_CHANNEL) {
+      // Resolution events broadcast to ALL connected clients — the page
+      // decides whether the conditionId belongs to a visible row.
+      // (trade-resolver spec §14.4)
+      let payload: ResolutionEventPayload;
       try {
-        if (matches(whale, client.filter)) {
-          if (client.socket.readyState === 1) {
-            client.socket.send(JSON.stringify({ type: 'whale', data: whale }));
-          }
-        }
-      } catch (e) {
-        logger.error({ e, connId }, 'error broadcasting to client');
+        payload = JSON.parse(message) as ResolutionEventPayload;
+      } catch {
+        logger.warn({ message }, 'failed to parse resolution event');
+        return;
       }
+
+      const frame = JSON.stringify({ type: 'resolution_update', data: payload });
+      for (const [connId, client] of clients) {
+        try {
+          if (client.socket.readyState === 1) {
+            client.socket.send(frame);
+          }
+        } catch (e) {
+          logger.error({ e, connId }, 'error broadcasting resolution_update');
+        }
+      }
+      return;
     }
   });
 

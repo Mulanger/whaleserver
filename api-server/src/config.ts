@@ -8,6 +8,9 @@ const envSchema = z.object({
   MONGO_DB: z.string().min(1).default('polywatch'),
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
   REDIS_CHANNEL: z.string().min(1).default('whales'),
+  RESOLUTION_CHANNEL: z.string().min(1).default('market_resolutions'),
+  /** Toggle the trade-resolver outcome merge; safe to keep on after deploy. */
+  OUTCOMES_IN_DTO: z.coerce.boolean().default(true),
   JWT_SECRET: z.string().min(1),
   JWT_PREVIOUS_SECRET: z.string().optional(),
   JWT_TTL_SECONDS: z.coerce.number().int().positive().default(2592000),

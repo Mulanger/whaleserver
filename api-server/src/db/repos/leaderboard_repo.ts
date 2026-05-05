@@ -1,7 +1,12 @@
 import { getDb } from '../mongo.js';
-import { toWhaleDto } from './whales_repo.js';
+import { toWhaleDto, mergeOutcomesIntoDtos } from './whales_repo.js';
 import { isUserFollowing } from './follows_repo.js';
 import { getNewYorkWindow } from '../../shared/ny_session.js';
+import {
+  toTraderResolvedBlock,
+  type TraderResolvedFields,
+} from './outcomes_repo.js';
+import type { TraderResolved } from '../../shared/types.js';
 
 export type LeaderboardWindow = '1d' | '7d' | '30d' | '365d';
 
@@ -75,6 +80,13 @@ export interface TraderProfile {
   dailyVolume: Array<{ date: string; volume: number }>;
   recentWhales: ReturnType<typeof toWhaleDto>[];
   isFollowing?: boolean;
+  /**
+   * Locked-in resolved-market stats from trade-resolver. Distinct from the
+   * watcher-owned `winRate` on traders — see trade-resolver spec §14.3 for
+   * the labelling guidance ("Resolved markets (locked)" vs "Polymarket
+   * positions (live)"). Absent when the trader has no resolved BUY trades.
+   */
+  resolved?: TraderResolved;
 }
 
 const LEADERBOARD_CACHE_TTL_MS = 60_000;
@@ -256,7 +268,7 @@ async function loadTraderProfile(wallet: string, currentUserId?: string): Promis
   const db = getDb();
   const dailyStartDate = startDateForWindow(30);
 
-  const [stats1d, stats7d, stats30d, stats365d, dailyVolumeRows, recentWhaleDocs, latestTradeDoc, firstTradeDoc, rankBadge, following] = await Promise.all([
+  const [stats1d, stats7d, stats30d, stats365d, dailyVolumeRows, recentWhaleDocs, latestTradeDoc, firstTradeDoc, rankBadge, following, traderDoc] = await Promise.all([
     aggregateWalletWindow(wallet, '1d'),
     aggregateWalletWindow(wallet, '7d'),
     aggregateWalletWindow(wallet, '30d'),
@@ -280,11 +292,16 @@ async function loadTraderProfile(wallet: string, currentUserId?: string): Promis
     ),
     getRankBadge(wallet),
     currentUserId ? isUserFollowing(currentUserId, wallet) : Promise.resolve(undefined),
+    // Resolver writes traders.resolved* fields keyed by _id = lowercase wallet.
+    db.collection<TraderResolvedFields & { _id: string }>('traders').findOne({ _id: wallet }),
   ]);
 
   if (!latestTradeDoc) {
     return null;
   }
+
+  const recentWhales = await mergeOutcomesIntoDtos(recentWhaleDocs.map(toWhaleDto));
+  const resolved = traderDoc ? toTraderResolvedBlock(traderDoc) : null;
 
   return {
     proxyWallet: wallet,
@@ -302,8 +319,9 @@ async function loadTraderProfile(wallet: string, currentUserId?: string): Promis
       '365d': stats365d,
     },
     dailyVolume: dailyVolumeRows.map((row) => ({ date: row.date, volume: row.volume })),
-    recentWhales: recentWhaleDocs.map(toWhaleDto),
+    recentWhales,
     ...(typeof following === 'boolean' ? { isFollowing: following } : {}),
+    ...(resolved ? { resolved } : {}),
   };
 }
 
