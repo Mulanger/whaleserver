@@ -39,13 +39,22 @@ export async function ensureIndexes(): Promise<void> {
   logger.info('created indexes on trader_follows');
 
   const marketPageSnapshots = db.collection('market_page_snapshots');
-  await marketPageSnapshots.createIndexes([
-    { key: { slug: 1 }, unique: true, name: 'idx_marketPageSnapshots_slug' },
-    { key: { indexable: 1, 'stats.whaleVolume': -1 }, name: 'idx_marketPageSnapshots_indexable_volume' },
-    { key: { 'stats.latestTradeTs': -1 }, name: 'idx_marketPageSnapshots_latestTrade' },
-    { key: { refreshedAt: 1 }, name: 'idx_marketPageSnapshots_refreshedAt' },
-  ]);
-  logger.info('created indexes on market_page_snapshots');
+  try {
+    await marketPageSnapshots.createIndexes([
+      {
+        key: { slug: 1 },
+        unique: true,
+        name: 'idx_marketPageSnapshots_slug',
+        partialFilterExpression: { slug: { $type: 'string' } },
+      },
+      { key: { indexable: 1, 'stats.whaleVolume': -1 }, name: 'idx_marketPageSnapshots_indexable_volume' },
+      { key: { 'stats.latestTradeTs': -1 }, name: 'idx_marketPageSnapshots_latestTrade' },
+      { key: { refreshedAt: 1 }, name: 'idx_marketPageSnapshots_refreshedAt' },
+    ]);
+    logger.info('created indexes on market_page_snapshots');
+  } catch (err) {
+    logger.warn({ err }, 'market_page_snapshots indexes failed; continuing startup');
+  }
 
   logger.info('all MongoDB indexes ensured');
 }
