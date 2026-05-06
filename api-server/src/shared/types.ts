@@ -86,6 +86,74 @@ export interface MarketDto {
   createdAt: Date;
 }
 
+export interface MarketPageWalletDto {
+  rank: number;
+  proxyWallet: string;
+  pseudonym?: string | null;
+  displayName?: string | null;
+  profileImage?: string | null;
+  volume: number;
+  tradeCount: number;
+  avgTrade: number;
+}
+
+export interface MarketPageRelatedDto {
+  slug: string;
+  title: string;
+  icon?: string | null;
+  eventSlug?: string | null;
+  whaleVolume: number;
+  whaleTradeCount: number;
+  score: number;
+}
+
+export interface MarketPageDto {
+  market: {
+    slug: string;
+    conditionId?: string | null;
+    title: string;
+    icon?: string | null;
+    category?: string | null;
+    eventSlug?: string | null;
+    polymarketUrl?: string | null;
+    endDate?: Date | null;
+    active?: boolean | null;
+    yesPriceCents?: number | null;
+    noPriceCents?: number | null;
+    volume24h?: number | null;
+    liquidity?: number | null;
+  };
+  stats: {
+    whaleVolume: number;
+    whaleTradeCount: number;
+    uniqueWhales: number;
+    biggestTradeUsd: number;
+    latestTradeTs: number;
+    firstTradeTs?: number;
+  };
+  topWallets: MarketPageWalletDto[];
+  relatedMarkets: MarketPageRelatedDto[];
+  recentTrades: WhaleDto[];
+  seo: {
+    indexable: boolean;
+    reason: string;
+    source: 'market_page_worker';
+    lookbackDays: number;
+    refreshedAt: Date;
+    lastQualifiedAt?: Date | null;
+    staleAt?: Date | null;
+  };
+}
+
+export interface MarketPageSitemapItemDto {
+  slug: string;
+  title: string;
+  whaleVolume: number;
+  whaleTradeCount: number;
+  latestTradeTs: number;
+  refreshedAt: Date;
+}
+
 /**
  * Resolved-stats summary from the trade-resolver. The two `winRate`s on the
  * same TraderDto need clear UI labelling: existing `winRate` is the watcher's

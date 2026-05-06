@@ -120,7 +120,7 @@ describe('push dispatcher', () => {
     expect(sendPushMock).toHaveBeenCalledWith(
       'fcm-token-1',
       expect.objectContaining({ title: expect.stringContaining('$13K') }),
-      { type: 'whale', tradeId: 'real-whale-1' }
+      { type: 'whale', tradeId: 'real-whale-1', url: '/trade/real-whale-1' }
     );
   });
 

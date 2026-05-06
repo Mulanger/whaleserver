@@ -54,6 +54,8 @@ npm start
 | WS | `/v1/whales/stream` | Real-time whale stream | No |
 | GET | `/v1/markets` | Market list | No |
 | GET | `/v1/markets/:slug` | Market detail | No |
+| GET | `/v1/market-pages` | Indexable market-page sitemap items | No |
+| GET | `/v1/market-pages/:slug` | Enriched market page snapshot | No |
 | GET | `/v1/traders/:wallet` | Trader stats | No |
 | POST | `/v1/auth/anonymous` | Anonymous auth | No |
 | POST | `/v1/alerts/subscribe` | Subscribe to alerts | Yes |
@@ -186,3 +188,13 @@ Whale Watcher → Redis pub/sub → API Server → Mobile App
 ```
 
 The API server subscribes to Redis for real-time whale updates, broadcasts to WebSocket clients, and sends FCM push notifications to subscribed users.
+
+## Market Page SEO Endpoints
+
+`GET /v1/market-pages?indexable=true&limit=250`
+
+Returns qualified market-page sitemap items from `market_page_snapshots`.
+
+`GET /v1/market-pages/:slug`
+
+Returns a precomputed market-page snapshot plus recent whale trades. The collection is populated by the `whale-watcher` market-page snapshot worker. Deploy watcher before relying on these endpoints in production. The website keeps a feed-scan fallback during rollout.
