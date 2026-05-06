@@ -44,8 +44,7 @@ export async function ensureIndexes(): Promise<void> {
       {
         key: { slug: 1 },
         unique: true,
-        name: 'idx_marketPageSnapshots_slug',
-        partialFilterExpression: { slug: { $type: 'string' } },
+        name: 'slug_1',
       },
       { key: { indexable: 1, 'stats.whaleVolume': -1 }, name: 'idx_marketPageSnapshots_indexable_volume' },
       { key: { 'stats.latestTradeTs': -1 }, name: 'idx_marketPageSnapshots_latestTrade' },
