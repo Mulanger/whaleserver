@@ -9,7 +9,7 @@ export type MobilePlatform = 'ios' | 'android' | 'web' | 'unknown';
  * See trade-resolver spec §14.2 and §5.3 for the SELL-side rendering nuance.
  */
 export interface WhaleOutcome {
-  status: 'open' | 'resolved_win' | 'resolved_loss' | 'invalid';
+  status: 'open' | 'closed' | 'resolved' | 'resolved_win' | 'resolved_loss' | 'invalid';
   winningOutcome: 'YES' | 'NO' | null;
   /** BUY: shares if win, 0 if loss; SELL: usdSize (proceeds) */
   payoutUsd: number | null;
@@ -32,6 +32,7 @@ export interface WhaleDto {
   priceMillicents: number;
   timestamp: number;
   market?: {
+    conditionId?: string;
     slug: string;
     title: string;
     category: string;

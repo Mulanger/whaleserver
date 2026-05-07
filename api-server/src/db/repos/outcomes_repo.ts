@@ -64,8 +64,12 @@ export interface TradeOutcomeDoc {
 }
 
 /** Shape exposed on WhaleDto.outcome — what clients see. */
+export type OutcomeBlockStatus =
+  | TradeOutcomeStatus
+  | Exclude<MarketResolutionStatus, 'tracking'>;
+
 export interface OutcomeBlock {
-  status: TradeOutcomeStatus;
+  status: OutcomeBlockStatus;
   winningOutcome: 'YES' | 'NO' | null;
   payoutUsd: number | null;
   pnlUsd: number | null;
@@ -119,6 +123,26 @@ export async function getResolutionByConditionId(
     .findOne({ _id: conditionId.toLowerCase() });
 }
 
+export async function getResolutionsByConditionIds(
+  conditionIds: string[],
+): Promise<Map<string, MarketResolutionDoc>> {
+  const ids = Array.from(
+    new Set(
+      conditionIds
+        .map((id) => id?.toLowerCase?.())
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  if (ids.length === 0) return new Map();
+
+  const db = getDb();
+  const docs = await db
+    .collection<MarketResolutionDoc>('market_resolutions')
+    .find({ _id: { $in: ids } })
+    .toArray();
+  return new Map(docs.map((d) => [d._id, d]));
+}
+
 export async function getRecentResolved(
   limit = 20,
 ): Promise<MarketResolutionDoc[]> {
@@ -145,6 +169,20 @@ export function toOutcomeBlock(doc: TradeOutcomeDoc): OutcomeBlock {
       ? Math.floor(doc.resolvedAt.getTime() / 1000)
       : null,
     closed: doc.status !== 'open',
+  };
+}
+
+export function toMarketResolutionBlock(doc: MarketResolutionDoc): OutcomeBlock {
+  const closed = doc.status === 'closed' || doc.status === 'resolved' || doc.status === 'invalid';
+  return {
+    status: closed ? doc.status : 'open',
+    winningOutcome: doc.winningOutcome,
+    payoutUsd: null,
+    pnlUsd: null,
+    resolvedAt: doc.resolvedAt
+      ? Math.floor(doc.resolvedAt.getTime() / 1000)
+      : null,
+    closed,
   };
 }
 

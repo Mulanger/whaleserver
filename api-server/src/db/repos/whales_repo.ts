@@ -7,7 +7,9 @@ import { config } from '../../config.js';
 import { logger } from '../../logger.js';
 import {
   getOutcomesByTradeIds,
+  getResolutionsByConditionIds,
   toOutcomeBlock,
+  toMarketResolutionBlock,
 } from './outcomes_repo.js';
 
 const WHALE_USD_FLOOR = 10_000;
@@ -47,10 +49,27 @@ export async function mergeOutcomesIntoDtos(
   try {
     const ids = dtos.map((d) => d.id);
     const outcomes = await getOutcomesByTradeIds(ids);
-    if (outcomes.size === 0) return dtos;
+    const missingConditionIds = dtos
+      .filter((d) => !outcomes.has(d.id))
+      .map((d) => d.market?.conditionId)
+      .filter((id): id is string => Boolean(id));
+    const resolutions = await getResolutionsByConditionIds(missingConditionIds);
+    if (outcomes.size === 0 && resolutions.size === 0) return dtos;
+
     return dtos.map((d) => {
       const o = outcomes.get(d.id);
-      return o ? { ...d, resolution: toOutcomeBlock(o) } : d;
+      if (o) return { ...d, resolution: toOutcomeBlock(o) };
+
+      const conditionId = d.market?.conditionId?.toLowerCase?.();
+      const resolution = conditionId ? resolutions.get(conditionId) : null;
+      if (
+        !resolution ||
+        resolution.status === 'tracking' ||
+        !toMarketResolutionBlock(resolution).closed
+      ) {
+        return d;
+      }
+      return { ...d, resolution: toMarketResolutionBlock(resolution) };
     });
   } catch (err) {
     logger.warn({ err }, 'mergeOutcomesIntoDtos failed; returning unmerged');
