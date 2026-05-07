@@ -148,4 +148,16 @@ describe('whale price response mapping', () => {
       priceMillicents: 9980,
     });
   });
+
+  it('looks up string trade ids used by whale feed rows', async () => {
+    const id = 'ccc5c94b2dbfce03b84854fe';
+    const { trades } = mockDbWithTrades([], tradeDoc({ _id: id }));
+
+    const result = await getWhaleById(id);
+
+    expect(result?.id).toBe(id);
+    const query = trades.findOne.mock.calls[0][0];
+    expect(query._id.$in[0]).toBe(id);
+    expect(query._id.$in[1].toHexString()).toBe(id);
+  });
 });

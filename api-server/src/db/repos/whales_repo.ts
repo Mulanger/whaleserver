@@ -14,6 +14,13 @@ import {
 
 const WHALE_USD_FLOOR = 10_000;
 
+async function findTradeDocById(db: ReturnType<typeof getDb>, id: string) {
+  if (!id) return null;
+  const ids: unknown[] = [id];
+  if (ObjectId.isValid(id)) ids.push(new ObjectId(id));
+  return db.collection('trades').findOne({ _id: { $in: ids } });
+}
+
 export function toWhaleDto(doc: any): WhaleDto {
   return {
     id: doc._id.toString(),
@@ -127,7 +134,7 @@ export async function getWhales(
 
 export async function getWhaleById(id: string): Promise<WhaleDto | null> {
   const db = getDb();
-  const doc = await db.collection('trades').findOne({ _id: new ObjectId(id) });
+  const doc = await findTradeDocById(db, id);
   if (!doc) return null;
 
   const dto = toWhaleDto(doc);
@@ -294,9 +301,7 @@ async function getTraderOneDayStats(wallet: string | undefined) {
 
 export async function getWhaleDetailById(id: string) {
   const db = getDb();
-  if (!ObjectId.isValid(id)) return null;
-
-  const doc = await db.collection('trades').findOne({ _id: new ObjectId(id) });
+  const doc = await findTradeDocById(db, id);
   if (!doc) return null;
 
   const trade = toWhaleDto(doc);
