@@ -56,6 +56,7 @@ npm start
 | GET | `/v1/markets/:slug` | Market detail | No |
 | GET | `/v1/market-pages` | Indexable market-page sitemap items | No |
 | GET | `/v1/market-pages/:slug` | Enriched market page snapshot | No |
+| GET | `/v1/trader-pages` | Indexable trader profile sitemap items | No |
 | GET | `/v1/traders/:wallet` | Trader stats | No |
 | POST | `/v1/auth/anonymous` | Anonymous auth | No |
 | POST | `/v1/alerts/subscribe` | Subscribe to alerts | Yes |
@@ -198,3 +199,9 @@ Returns qualified market-page sitemap items from `market_page_snapshots`.
 `GET /v1/market-pages/:slug`
 
 Returns a precomputed market-page snapshot plus recent whale trades. The collection is populated by the `whale-watcher` market-page snapshot worker. Deploy watcher before relying on these endpoints in production. The website keeps a feed-scan fallback during rollout.
+
+## Trader Page SEO Endpoint
+
+`GET /v1/trader-pages?indexable=true&limit=500`
+
+Returns stable trader profile sitemap items from `trader_page_index`. The collection is populated by the `whale-watcher` trader-page index worker and intentionally keeps wallets after they fall out of the live leaderboard so discovered `/trader/:wallet` URLs remain stable.

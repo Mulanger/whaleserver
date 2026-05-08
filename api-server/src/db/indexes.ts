@@ -55,5 +55,18 @@ export async function ensureIndexes(): Promise<void> {
     logger.warn({ err }, 'market_page_snapshots indexes failed; continuing startup');
   }
 
+  const traderPageIndex = db.collection('trader_page_index');
+  try {
+    await traderPageIndex.createIndexes([
+      { key: { proxyWallet: 1 }, unique: true, name: 'proxyWallet_1' },
+      { key: { indexable: 1, bestRank: 1 }, name: 'idx_traderPageIndex_indexable_rank' },
+      { key: { indexable: 1, bestVolume: -1 }, name: 'idx_traderPageIndex_indexable_volume' },
+      { key: { lastSeenTs: -1 }, name: 'idx_traderPageIndex_lastSeen' },
+    ]);
+    logger.info('created indexes on trader_page_index');
+  } catch (err) {
+    logger.warn({ err }, 'trader_page_index indexes failed; continuing startup');
+  }
+
   logger.info('all MongoDB indexes ensured');
 }

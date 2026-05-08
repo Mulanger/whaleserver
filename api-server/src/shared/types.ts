@@ -155,6 +155,23 @@ export interface MarketPageSitemapItemDto {
   refreshedAt: Date;
 }
 
+export interface TraderPageSitemapItemDto {
+  proxyWallet: string;
+  pseudonym?: string | null;
+  displayName?: string | null;
+  profileImage?: string | null;
+  firstSeenTs: number;
+  lastSeenTs: number;
+  firstLeaderboardAt: number;
+  lastLeaderboardAt: number;
+  bestRank: number;
+  bestRankWindow: '1d' | '7d' | '30d' | '365d';
+  bestVolume: number;
+  tradeCount: number;
+  whaleCount: number;
+  refreshedAt: Date;
+}
+
 /**
  * Resolved-stats summary from the trade-resolver. The two `winRate`s on the
  * same TraderDto need clear UI labelling: existing `winRate` is the watcher's
