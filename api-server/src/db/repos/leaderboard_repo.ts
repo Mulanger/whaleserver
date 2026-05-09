@@ -3,6 +3,7 @@ import { toWhaleDto, mergeOutcomesIntoDtos } from './whales_repo.js';
 import { isUserFollowing } from './follows_repo.js';
 import { getNewYorkWindow } from '../../shared/ny_session.js';
 import {
+  getTraderResolvedSummary,
   toTraderResolvedBlock,
   type TradeOutcomeDoc,
   type TraderResolvedFields,
@@ -392,7 +393,7 @@ async function loadTraderProfile(wallet: string, currentUserId?: string): Promis
   const db = getDb();
   const dailyStartDate = startDateForWindow(30);
 
-  const [stats1d, stats7d, stats30d, stats365d, dailyVolumeRows, recentWhaleDocs, latestTradeDoc, firstTradeDoc, rankBadge, following, traderDoc] = await Promise.all([
+  const [stats1d, stats7d, stats30d, stats365d, dailyVolumeRows, recentWhaleDocs, latestTradeDoc, firstTradeDoc, rankBadge, following, traderDoc, resolvedSummary] = await Promise.all([
     aggregateWalletWindow(wallet, '1d'),
     aggregateWalletWindow(wallet, '7d'),
     aggregateWalletWindow(wallet, '30d'),
@@ -418,6 +419,7 @@ async function loadTraderProfile(wallet: string, currentUserId?: string): Promis
     currentUserId ? isUserFollowing(currentUserId, wallet) : Promise.resolve(undefined),
     // Resolver writes traders.resolved* fields keyed by _id = lowercase wallet.
     db.collection<TraderResolvedFields & { _id: string }>('traders').findOne({ _id: wallet }),
+    getTraderResolvedSummary(wallet).catch(() => null),
   ]);
 
   if (!latestTradeDoc) {
@@ -425,7 +427,7 @@ async function loadTraderProfile(wallet: string, currentUserId?: string): Promis
   }
 
   const recentWhales = await mergeOutcomesIntoDtos(recentWhaleDocs.map(toWhaleDto));
-  const resolved = traderDoc ? toTraderResolvedBlock(traderDoc) : null;
+  const resolved = resolvedSummary ?? (traderDoc ? toTraderResolvedBlock(traderDoc) : null);
 
   return {
     proxyWallet: wallet,

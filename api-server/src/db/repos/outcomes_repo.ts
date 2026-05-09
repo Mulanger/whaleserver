@@ -84,6 +84,7 @@ export interface TraderResolvedBlock {
   buyCount: number;
   winCount: number;
   lossCount: number;
+  longestWinStreak: number;
   /** 0..1 */
   winRate: number | null;
   realizedPnlUsd: number;
@@ -195,6 +196,7 @@ export interface TraderResolvedFields {
   resolvedBuyCount?: number;
   resolvedWinCount?: number;
   resolvedLossCount?: number;
+  resolvedLongestWinStreak?: number;
   resolvedWinRate?: number | null;
   resolvedRealizedPnlUsd?: number;
   resolvedVolumeUsd?: number;
@@ -217,10 +219,98 @@ export function toTraderResolvedBlock(
     buyCount: doc.resolvedBuyCount ?? 0,
     winCount: doc.resolvedWinCount ?? 0,
     lossCount: doc.resolvedLossCount ?? 0,
+    longestWinStreak: doc.resolvedLongestWinStreak ?? 0,
     winRate: doc.resolvedWinRate ?? null,
     realizedPnlUsd: doc.resolvedRealizedPnlUsd ?? 0,
     volumeUsd: doc.resolvedVolumeUsd ?? 0,
     lastUpdatedAt: doc.resolvedLastUpdatedAt ?? new Date(0),
     lastResolvedAt: doc.resolvedLastResolvedAt ?? null,
+  };
+}
+
+function tradeOutcomeResult(status: TradeOutcomeStatus): 'W' | 'L' | null {
+  if (status === 'resolved_win') return 'W';
+  if (status === 'resolved_loss') return 'L';
+  return null;
+}
+
+function computeLongestWinStreak(docs: Pick<TradeOutcomeDoc, 'status'>[]): number {
+  let current = 0;
+  let longest = 0;
+
+  for (const doc of docs) {
+    if (tradeOutcomeResult(doc.status) === 'W') {
+      current += 1;
+      longest = Math.max(longest, current);
+    } else {
+      current = 0;
+    }
+  }
+
+  return longest;
+}
+
+/**
+ * Compute authoritative resolved BUY stats directly from trade_outcomes.
+ * The streak is ordered by trade timestamp, matching "consecutive trades
+ * without a loss in between" instead of leaderboard or sitemap ordering.
+ */
+export async function getTraderResolvedSummary(
+  wallet: string,
+): Promise<TraderResolvedBlock | null> {
+  const normalizedWallet = wallet.toLowerCase();
+  const db = getDb();
+  const docs = await db
+    .collection<TradeOutcomeDoc>('trade_outcomes')
+    .find(
+      {
+        proxyWallet: normalizedWallet,
+        side: 'BUY',
+        status: { $in: ['resolved_win', 'resolved_loss'] },
+      },
+      {
+        projection: {
+          _id: 1,
+          status: 1,
+          pnlUsd: 1,
+          usdSize: 1,
+          timestamp: 1,
+          resolvedAt: 1,
+        },
+      },
+    )
+    .sort({ timestamp: 1, resolvedAt: 1, _id: 1 })
+    .toArray();
+
+  if (docs.length === 0) return null;
+
+  let winCount = 0;
+  let lossCount = 0;
+  let realizedPnlUsd = 0;
+  let volumeUsd = 0;
+  let lastResolvedAt: Date | null = null;
+
+  for (const doc of docs) {
+    if (doc.status === 'resolved_win') winCount += 1;
+    if (doc.status === 'resolved_loss') lossCount += 1;
+    realizedPnlUsd += doc.pnlUsd ?? 0;
+    volumeUsd += doc.usdSize ?? 0;
+    if (doc.resolvedAt && (!lastResolvedAt || doc.resolvedAt > lastResolvedAt)) {
+      lastResolvedAt = doc.resolvedAt;
+    }
+  }
+
+  const buyCount = winCount + lossCount;
+
+  return {
+    buyCount,
+    winCount,
+    lossCount,
+    longestWinStreak: computeLongestWinStreak(docs),
+    winRate: buyCount > 0 ? winCount / buyCount : null,
+    realizedPnlUsd,
+    volumeUsd,
+    lastUpdatedAt: new Date(),
+    lastResolvedAt,
   };
 }

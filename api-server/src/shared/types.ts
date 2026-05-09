@@ -182,6 +182,7 @@ export interface TraderResolved {
   buyCount: number;
   winCount: number;
   lossCount: number;
+  longestWinStreak: number;
   /** 0..1; null when buyCount === 0 */
   winRate: number | null;
   realizedPnlUsd: number;

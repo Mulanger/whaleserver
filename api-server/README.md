@@ -57,7 +57,7 @@ npm start
 | GET | `/v1/market-pages` | Indexable market-page sitemap items | No |
 | GET | `/v1/market-pages/:slug` | Enriched market page snapshot | No |
 | GET | `/v1/trader-pages` | Indexable trader profile sitemap items | No |
-| GET | `/v1/traders/:wallet` | Trader stats | No |
+| GET | `/v1/traders/:wallet` | Trader stats, recent whales, and resolved historical stats including `resolved.longestWinStreak` | No |
 | GET | `/v1/leaderboard` | Windowed whale leaderboard with cached all-time P/L summary fields | No |
 | POST | `/v1/auth/anonymous` | Anonymous auth | No |
 | POST | `/v1/alerts/subscribe` | Subscribe to alerts | Yes |
@@ -67,6 +67,11 @@ npm start
 | GET | `/metrics` | Prometheus metrics | No |
 
 ## Alerts + Anonymous Auth Contract
+
+## Trader Resolved Stats
+
+`GET /v1/traders/:wallet` may include a `resolved` block sourced from `trade_outcomes`.
+`resolved.longestWinStreak` is computed from all resolved BUY outcomes for that wallet in chronological trade order, not from the visible whale-feed subset.
 
 ### `POST /v1/auth/anonymous`
 
