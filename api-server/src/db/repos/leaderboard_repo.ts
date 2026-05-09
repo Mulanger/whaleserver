@@ -4,6 +4,7 @@ import { isUserFollowing } from './follows_repo.js';
 import { getNewYorkWindow } from '../../shared/ny_session.js';
 import {
   toTraderResolvedBlock,
+  type TradeOutcomeDoc,
   type TraderResolvedFields,
 } from './outcomes_repo.js';
 import type { TraderResolved } from '../../shared/types.js';
@@ -30,6 +31,27 @@ interface LeaderboardAggregateRow {
   whaleCount: number;
 }
 
+interface ProfitAggregateRow {
+  _id: string;
+  allTimeProfitUsd: number;
+  allTimePnlTradeCount: number;
+  resolvedWinCount: number;
+  resolvedLossCount: number;
+}
+
+interface RecentFormAggregateRow {
+  _id: string;
+  statuses: Array<'resolved_win' | 'resolved_loss'>;
+}
+
+interface LeaderboardProfitSummary {
+  allTimeProfitUsd: number;
+  allTimeProfitKnown: boolean;
+  allTimePnlTradeCount: number;
+  recentFormResults: Array<'W' | 'L'>;
+  recentFormWinRatePct: number | null;
+}
+
 interface LeaderboardCacheEntry {
   asOf: number;
   expiresAt: number;
@@ -46,6 +68,11 @@ export interface LeaderboardItem {
   tradeCount: number;
   whaleCount: number;
   topCategory: null;
+  allTimeProfitUsd?: number | null;
+  allTimeProfitKnown?: boolean;
+  allTimePnlTradeCount?: number | null;
+  recentFormResults?: Array<'W' | 'L'>;
+  recentFormWinRatePct?: number | null;
 }
 
 export interface LeaderboardPage {
@@ -137,6 +164,93 @@ function shortAddress(wallet: string): string {
   return `${wallet.slice(0, 6)}..${wallet.slice(-4)}`;
 }
 
+function statusToResult(status: string): 'W' | 'L' | null {
+  if (status === 'resolved_win') return 'W';
+  if (status === 'resolved_loss') return 'L';
+  return null;
+}
+
+function recentWinRatePct(results: Array<'W' | 'L'>): number | null {
+  if (results.length === 0) return null;
+  const wins = results.filter((result) => result === 'W').length;
+  return (wins / results.length) * 100;
+}
+
+async function getLeaderboardProfitSummaries(wallets: string[]): Promise<Map<string, LeaderboardProfitSummary>> {
+  const db = getDb();
+  const normalizedWallets = Array.from(
+    new Set(wallets.map((wallet) => wallet.toLowerCase()).filter(Boolean)),
+  );
+  if (normalizedWallets.length === 0) return new Map();
+
+  const match = {
+    proxyWallet: { $in: normalizedWallets },
+    side: 'BUY',
+    status: { $in: ['resolved_win', 'resolved_loss'] },
+  };
+
+  const [profitRows, recentRows] = await Promise.all([
+    db.collection<TradeOutcomeDoc>('trade_outcomes').aggregate<ProfitAggregateRow>([
+      { $match: match },
+      {
+        $group: {
+          _id: '$proxyWallet',
+          allTimeProfitUsd: { $sum: { $ifNull: ['$pnlUsd', 0] } },
+          allTimePnlTradeCount: { $sum: 1 },
+          resolvedWinCount: { $sum: { $cond: [{ $eq: ['$status', 'resolved_win'] }, 1, 0] } },
+          resolvedLossCount: { $sum: { $cond: [{ $eq: ['$status', 'resolved_loss'] }, 1, 0] } },
+        },
+      },
+    ], { allowDiskUse: true }).toArray(),
+    db.collection<TradeOutcomeDoc>('trade_outcomes').aggregate<RecentFormAggregateRow>([
+      { $match: match },
+      { $sort: { proxyWallet: 1, resolvedAt: -1, timestamp: -1 } },
+      {
+        $group: {
+          _id: '$proxyWallet',
+          statuses: { $push: '$status' },
+        },
+      },
+      {
+        $project: {
+          statuses: { $slice: ['$statuses', 5] },
+        },
+      },
+    ], { allowDiskUse: true }).toArray(),
+  ]);
+
+  const summaries = new Map<string, LeaderboardProfitSummary>();
+
+  for (const row of profitRows) {
+    const wallet = row._id.toLowerCase();
+    summaries.set(wallet, {
+      allTimeProfitUsd: row.allTimeProfitUsd,
+      allTimeProfitKnown: row.allTimePnlTradeCount > 0,
+      allTimePnlTradeCount: row.allTimePnlTradeCount,
+      recentFormResults: [],
+      recentFormWinRatePct: null,
+    });
+  }
+
+  for (const row of recentRows) {
+    const wallet = row._id.toLowerCase();
+    const results = row.statuses
+      .map(statusToResult)
+      .filter((result): result is 'W' | 'L' => Boolean(result));
+    const existing = summaries.get(wallet);
+
+    summaries.set(wallet, {
+      allTimeProfitUsd: existing?.allTimeProfitUsd ?? 0,
+      allTimeProfitKnown: existing?.allTimeProfitKnown ?? results.length > 0,
+      allTimePnlTradeCount: existing?.allTimePnlTradeCount ?? results.length,
+      recentFormResults: results,
+      recentFormWinRatePct: recentWinRatePct(results),
+    });
+  }
+
+  return summaries;
+}
+
 async function computeLeaderboard(window: LeaderboardWindow): Promise<LeaderboardCacheEntry> {
   const db = getDb();
   const session = getNewYorkWindow(WINDOW_DAYS[window]);
@@ -163,17 +277,27 @@ async function computeLeaderboard(window: LeaderboardWindow): Promise<Leaderboar
     { $limit: MAX_CACHED_ROWS },
   ], { allowDiskUse: true }).toArray();
 
-  const items: LeaderboardItem[] = rows.map((row, index) => ({
-    rank: index + 1,
-    proxyWallet: row._id,
-    pseudonym: row.pseudonym ?? null,
-    displayName: null,
-    profileImage: null,
-    volume: row.volume,
-    tradeCount: row.tradeCount,
-    whaleCount: row.whaleCount,
-    topCategory: null,
-  }));
+  const profitSummaries = await getLeaderboardProfitSummaries(rows.map((row) => row._id));
+
+  const items: LeaderboardItem[] = rows.map((row, index) => {
+    const profit = profitSummaries.get(row._id);
+    return {
+      rank: index + 1,
+      proxyWallet: row._id,
+      pseudonym: row.pseudonym ?? null,
+      displayName: null,
+      profileImage: null,
+      volume: row.volume,
+      tradeCount: row.tradeCount,
+      whaleCount: row.whaleCount,
+      topCategory: null,
+      allTimeProfitUsd: profit?.allTimeProfitUsd ?? null,
+      allTimeProfitKnown: profit?.allTimeProfitKnown ?? false,
+      allTimePnlTradeCount: profit?.allTimePnlTradeCount ?? null,
+      recentFormResults: profit?.recentFormResults ?? [],
+      recentFormWinRatePct: profit?.recentFormWinRatePct ?? null,
+    };
+  });
 
   return {
     asOf: Math.floor(Date.now() / 1000),

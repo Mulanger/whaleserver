@@ -58,6 +58,7 @@ npm start
 | GET | `/v1/market-pages/:slug` | Enriched market page snapshot | No |
 | GET | `/v1/trader-pages` | Indexable trader profile sitemap items | No |
 | GET | `/v1/traders/:wallet` | Trader stats | No |
+| GET | `/v1/leaderboard` | Windowed whale leaderboard with cached all-time P/L summary fields | No |
 | POST | `/v1/auth/anonymous` | Anonymous auth | No |
 | POST | `/v1/alerts/subscribe` | Subscribe to alerts | Yes |
 | DELETE | `/v1/alerts/subscribe` | Unsubscribe | Yes |
@@ -205,3 +206,15 @@ Returns a precomputed market-page snapshot plus recent whale trades. The collect
 `GET /v1/trader-pages?indexable=true&limit=500`
 
 Returns stable trader profile sitemap items from `trader_page_index`. The collection is populated by the `whale-watcher` trader-page index worker and intentionally keeps wallets after they fall out of the live leaderboard so discovered `/trader/:wallet` URLs remain stable.
+
+## Leaderboard Profit Fields
+
+`GET /v1/leaderboard?window=1d|7d|30d|365d&limit=50` returns the normal windowed volume/trade-count leaderboard and enriches each cached row with all-time resolved P/L fields from `trade_outcomes` when available:
+
+- `allTimeProfitUsd`: sum of resolved BUY-trade `pnlUsd`.
+- `allTimeProfitKnown`: true when at least one resolved P/L trade exists.
+- `allTimePnlTradeCount`: count of resolved BUY trades included in the P/L sum.
+- `recentFormResults`: latest five resolved BUY trade results as `W`/`L`, newest first.
+- `recentFormWinRatePct`: win percentage across `recentFormResults`.
+
+These fields are computed once per API leaderboard cache refresh, not by every browser visitor.
