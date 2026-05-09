@@ -178,6 +178,20 @@ export interface TraderPageSitemapItemDto {
  * live Polymarket-positions number, while `resolved.winRate` is locked-in
  * resolved BUY trades. See trade-resolver spec §14.3.
  */
+export type TraderResolvedWindowId = '1d' | '7d' | '30d' | '365d';
+
+export interface TraderResolvedWindow {
+  buyCount: number;
+  winCount: number;
+  lossCount: number;
+  /** 0..1; null when buyCount === 0 */
+  winRate: number | null;
+  realizedPnlUsd: number;
+  volumeUsd: number;
+  recentResults: Array<'W' | 'L'>;
+  recentWinRate: number | null;
+}
+
 export interface TraderResolved {
   buyCount: number;
   winCount: number;
@@ -187,6 +201,10 @@ export interface TraderResolved {
   winRate: number | null;
   realizedPnlUsd: number;
   volumeUsd: number;
+  firstTradeAt: number | null;
+  recentResults: Array<'W' | 'L'>;
+  recentWinRate: number | null;
+  windows: Partial<Record<TraderResolvedWindowId, TraderResolvedWindow>>;
   lastUpdatedAt: Date;
   lastResolvedAt: Date | null;
 }

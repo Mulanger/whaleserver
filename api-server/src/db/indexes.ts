@@ -38,6 +38,23 @@ export async function ensureIndexes(): Promise<void> {
   ]);
   logger.info('created indexes on trader_follows');
 
+  const tradeOutcomes = db.collection('trade_outcomes');
+  try {
+    await tradeOutcomes.createIndexes([
+      {
+        key: { proxyWallet: 1, side: 1, status: 1, timestamp: 1, resolvedAt: 1, _id: 1 },
+        name: 'idx_tradeOutcomes_wallet_resolved_chronological',
+      },
+      {
+        key: { proxyWallet: 1, side: 1, status: 1, resolvedAt: -1, timestamp: -1 },
+        name: 'idx_tradeOutcomes_wallet_resolved_recent',
+      },
+    ]);
+    logger.info('created indexes on trade_outcomes resolved wallet reads');
+  } catch (err) {
+    logger.warn({ err }, 'trade_outcomes indexes failed; continuing startup');
+  }
+
   const marketPageSnapshots = db.collection('market_page_snapshots');
   try {
     await marketPageSnapshots.createIndexes([

@@ -119,11 +119,13 @@ export interface TraderProfile {
 
 const LEADERBOARD_CACHE_TTL_MS = 60_000;
 const PROFILE_CACHE_TTL_MS = 30_000;
+const RESOLVED_PROFILE_CACHE_TTL_MS = 60_000;
 const MAX_CACHED_ROWS = 500;
 const WHALE_USD_FLOOR = 10_000;
 
 const leaderboardCache = new Map<LeaderboardWindow, LeaderboardCacheEntry>();
 const traderProfileCache = new Map<string, { expiresAt: number; data: TraderProfile }>();
+const traderResolvedCache = new Map<string, { expiresAt: number; data: TraderResolved | null }>();
 
 const WINDOW_DAYS: Record<LeaderboardWindow, number> = {
   '1d': 1,
@@ -144,6 +146,21 @@ function startDateForWindow(days: number): string {
   utcToday.setUTCHours(0, 0, 0, 0);
   utcToday.setUTCDate(utcToday.getUTCDate() - (days - 1));
   return formatUtcDate(utcToday);
+}
+
+async function getCachedTraderResolvedSummary(walletInput: string): Promise<TraderResolved | null> {
+  const wallet = walletInput.toLowerCase();
+  const cached = traderResolvedCache.get(wallet);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
+  const summary = await getTraderResolvedSummary(wallet).catch(() => null);
+  traderResolvedCache.set(wallet, {
+    data: summary,
+    expiresAt: Date.now() + RESOLVED_PROFILE_CACHE_TTL_MS,
+  });
+  return summary;
 }
 
 function encodeCursorOffset(offset: number): string {
@@ -419,7 +436,7 @@ async function loadTraderProfile(wallet: string, currentUserId?: string): Promis
     currentUserId ? isUserFollowing(currentUserId, wallet) : Promise.resolve(undefined),
     // Resolver writes traders.resolved* fields keyed by _id = lowercase wallet.
     db.collection<TraderResolvedFields & { _id: string }>('traders').findOne({ _id: wallet }),
-    getTraderResolvedSummary(wallet).catch(() => null),
+    getCachedTraderResolvedSummary(wallet),
   ]);
 
   if (!latestTradeDoc) {

@@ -11,6 +11,7 @@
  * See trade-resolver spec §14 for the contract.
  */
 import { getDb } from '../mongo.js';
+import { getNewYorkWindow } from '../../shared/ny_session.js';
 
 // ---------------------------------------------------------------------------
 // Types (mirror trade-resolver's db/outcomes.ts shape)
@@ -89,8 +90,23 @@ export interface TraderResolvedBlock {
   winRate: number | null;
   realizedPnlUsd: number;
   volumeUsd: number;
+  firstTradeAt: number | null;
+  recentResults: Array<'W' | 'L'>;
+  recentWinRate: number | null;
+  windows: Partial<Record<'1d' | '7d' | '30d' | '365d', TraderResolvedWindowBlock>>;
   lastUpdatedAt: Date;
   lastResolvedAt: Date | null;
+}
+
+export interface TraderResolvedWindowBlock {
+  buyCount: number;
+  winCount: number;
+  lossCount: number;
+  winRate: number | null;
+  realizedPnlUsd: number;
+  volumeUsd: number;
+  recentResults: Array<'W' | 'L'>;
+  recentWinRate: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +239,10 @@ export function toTraderResolvedBlock(
     winRate: doc.resolvedWinRate ?? null,
     realizedPnlUsd: doc.resolvedRealizedPnlUsd ?? 0,
     volumeUsd: doc.resolvedVolumeUsd ?? 0,
+    firstTradeAt: null,
+    recentResults: [],
+    recentWinRate: null,
+    windows: {},
     lastUpdatedAt: doc.resolvedLastUpdatedAt ?? new Date(0),
     lastResolvedAt: doc.resolvedLastResolvedAt ?? null,
   };
@@ -250,6 +270,47 @@ function computeLongestWinStreak(docs: Pick<TradeOutcomeDoc, 'status'>[]): numbe
   return longest;
 }
 
+function recentResultsNewestFirst(docs: Pick<TradeOutcomeDoc, 'status'>[], limit: number): Array<'W' | 'L'> {
+  return docs
+    .slice(-limit)
+    .reverse()
+    .map((doc) => tradeOutcomeResult(doc.status))
+    .filter((result): result is 'W' | 'L' => Boolean(result));
+}
+
+function winRateFromResults(results: Array<'W' | 'L'>): number | null {
+  if (results.length === 0) return null;
+  return results.filter((result) => result === 'W').length / results.length;
+}
+
+function buildResolvedWindowBlock(docs: TradeOutcomeDoc[]): TraderResolvedWindowBlock {
+  let winCount = 0;
+  let lossCount = 0;
+  let realizedPnlUsd = 0;
+  let volumeUsd = 0;
+
+  for (const doc of docs) {
+    if (doc.status === 'resolved_win') winCount += 1;
+    if (doc.status === 'resolved_loss') lossCount += 1;
+    realizedPnlUsd += doc.pnlUsd ?? 0;
+    volumeUsd += doc.usdSize ?? 0;
+  }
+
+  const buyCount = winCount + lossCount;
+  const recentResults = recentResultsNewestFirst(docs, 15);
+
+  return {
+    buyCount,
+    winCount,
+    lossCount,
+    winRate: buyCount > 0 ? winCount / buyCount : null,
+    realizedPnlUsd,
+    volumeUsd,
+    recentResults,
+    recentWinRate: winRateFromResults(recentResults),
+  };
+}
+
 /**
  * Compute authoritative resolved BUY stats directly from trade_outcomes.
  * The streak is ordered by trade timestamp, matching "consecutive trades
@@ -257,6 +318,7 @@ function computeLongestWinStreak(docs: Pick<TradeOutcomeDoc, 'status'>[]): numbe
  */
 export async function getTraderResolvedSummary(
   wallet: string,
+  nowMs = Date.now(),
 ): Promise<TraderResolvedBlock | null> {
   const normalizedWallet = wallet.toLowerCase();
   const db = getDb();
@@ -284,32 +346,40 @@ export async function getTraderResolvedSummary(
 
   if (docs.length === 0) return null;
 
-  let winCount = 0;
-  let lossCount = 0;
-  let realizedPnlUsd = 0;
-  let volumeUsd = 0;
   let lastResolvedAt: Date | null = null;
 
   for (const doc of docs) {
-    if (doc.status === 'resolved_win') winCount += 1;
-    if (doc.status === 'resolved_loss') lossCount += 1;
-    realizedPnlUsd += doc.pnlUsd ?? 0;
-    volumeUsd += doc.usdSize ?? 0;
     if (doc.resolvedAt && (!lastResolvedAt || doc.resolvedAt > lastResolvedAt)) {
       lastResolvedAt = doc.resolvedAt;
     }
   }
 
-  const buyCount = winCount + lossCount;
+  const allTime = buildResolvedWindowBlock(docs);
+  const windows = Object.fromEntries(
+    ([
+      ['1d', 1],
+      ['7d', 7],
+      ['30d', 30],
+      ['365d', 365],
+    ] as const).map(([windowId, days]) => {
+      const window = getNewYorkWindow(days, nowMs);
+      const windowDocs = docs.filter((doc) => doc.timestamp >= window.startTs && doc.timestamp < window.endTs);
+      return [windowId, buildResolvedWindowBlock(windowDocs)];
+    }),
+  );
 
   return {
-    buyCount,
-    winCount,
-    lossCount,
+    buyCount: allTime.buyCount,
+    winCount: allTime.winCount,
+    lossCount: allTime.lossCount,
     longestWinStreak: computeLongestWinStreak(docs),
-    winRate: buyCount > 0 ? winCount / buyCount : null,
-    realizedPnlUsd,
-    volumeUsd,
+    winRate: allTime.winRate,
+    realizedPnlUsd: allTime.realizedPnlUsd,
+    volumeUsd: allTime.volumeUsd,
+    firstTradeAt: docs[0]?.timestamp ?? null,
+    recentResults: allTime.recentResults,
+    recentWinRate: allTime.recentWinRate,
+    windows,
     lastUpdatedAt: new Date(),
     lastResolvedAt,
   };

@@ -71,7 +71,14 @@ npm start
 ## Trader Resolved Stats
 
 `GET /v1/traders/:wallet` may include a `resolved` block sourced from `trade_outcomes`.
-`resolved.longestWinStreak` is computed from all resolved BUY outcomes for that wallet in chronological trade order, not from the visible whale-feed subset.
+This block is the authoritative source for resolved performance metrics that should not be reconstructed from the visible whale-feed subset:
+
+- `resolved.realizedPnlUsd`: all-time realized BUY-trade P/L.
+- `resolved.longestWinStreak`: all resolved BUY outcomes in chronological trade order.
+- `resolved.recentResults`: latest resolved BUY results as `W`/`L`, newest first.
+- `resolved.windows`: resolved BUY win/loss/P&L summaries for `1d`, `7d`, `30d`, and `365d` New York-session windows.
+
+The trader profile loader caches this resolved block by wallet for a short TTL so multiple visitors do not trigger repeated all-time scans. `ensureIndexes()` also creates wallet/status/timestamp indexes on `trade_outcomes`; keep those in place for profile and profit leaderboard reads.
 
 ### `POST /v1/auth/anonymous`
 
