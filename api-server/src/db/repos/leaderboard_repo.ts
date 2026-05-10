@@ -11,6 +11,7 @@ import {
 import type { TraderResolved } from '../../shared/types.js';
 
 export type LeaderboardWindow = '1d' | '7d' | '30d' | '365d';
+export type LeaderboardSort = 'volume' | 'profit';
 
 interface TraderDailyStatsDoc {
   _id: string;
@@ -124,6 +125,7 @@ const MAX_CACHED_ROWS = 500;
 const WHALE_USD_FLOOR = 10_000;
 
 const leaderboardCache = new Map<LeaderboardWindow, LeaderboardCacheEntry>();
+let profitLeaderboardCache: LeaderboardCacheEntry | null = null;
 const traderProfileCache = new Map<string, { expiresAt: number; data: TraderProfile }>();
 const traderResolvedCache = new Map<string, { expiresAt: number; data: TraderResolved | null }>();
 
@@ -324,6 +326,58 @@ async function computeLeaderboard(window: LeaderboardWindow): Promise<Leaderboar
   };
 }
 
+async function computeProfitLeaderboard(): Promise<LeaderboardCacheEntry> {
+  const db = getDb();
+  const rows = await db.collection<TradeOutcomeDoc>('trade_outcomes').aggregate<ProfitAggregateRow>([
+    {
+      $match: {
+        proxyWallet: { $type: 'string', $ne: '' },
+        side: 'BUY',
+        status: { $in: ['resolved_win', 'resolved_loss'] },
+      },
+    },
+    {
+      $group: {
+        _id: { $toLower: '$proxyWallet' },
+        allTimeProfitUsd: { $sum: { $ifNull: ['$pnlUsd', 0] } },
+        allTimePnlTradeCount: { $sum: 1 },
+        resolvedWinCount: { $sum: { $cond: [{ $eq: ['$status', 'resolved_win'] }, 1, 0] } },
+        resolvedLossCount: { $sum: { $cond: [{ $eq: ['$status', 'resolved_loss'] }, 1, 0] } },
+      },
+    },
+    { $sort: { allTimeProfitUsd: -1, _id: 1 } },
+    { $limit: MAX_CACHED_ROWS },
+  ], { allowDiskUse: true }).toArray();
+
+  const profitSummaries = await getLeaderboardProfitSummaries(rows.map((row) => row._id));
+
+  const items: LeaderboardItem[] = rows.map((row, index) => {
+    const profit = profitSummaries.get(row._id);
+    return {
+      rank: index + 1,
+      proxyWallet: row._id,
+      pseudonym: null,
+      displayName: null,
+      profileImage: null,
+      volume: 0,
+      tradeCount: profit?.allTimePnlTradeCount ?? row.allTimePnlTradeCount,
+      whaleCount: profit?.allTimePnlTradeCount ?? row.allTimePnlTradeCount,
+      topCategory: null,
+      allTimeProfitUsd: profit?.allTimeProfitUsd ?? row.allTimeProfitUsd,
+      allTimeProfitKnown: profit?.allTimeProfitKnown ?? row.allTimePnlTradeCount > 0,
+      allTimePnlTradeCount: profit?.allTimePnlTradeCount ?? row.allTimePnlTradeCount,
+      recentFormResults: profit?.recentFormResults ?? [],
+      recentFormWinRatePct: profit?.recentFormWinRatePct ?? null,
+    };
+  });
+
+  return {
+    asOf: Math.floor(Date.now() / 1000),
+    expiresAt: Date.now() + LEADERBOARD_CACHE_TTL_MS,
+    items,
+  };
+}
+
 async function getLeaderboardSnapshot(window: LeaderboardWindow, fresh = false): Promise<LeaderboardCacheEntry> {
   const cached = leaderboardCache.get(window);
   if (!fresh && cached && cached.expiresAt > Date.now()) {
@@ -332,6 +386,16 @@ async function getLeaderboardSnapshot(window: LeaderboardWindow, fresh = false):
 
   const snapshot = await computeLeaderboard(window);
   leaderboardCache.set(window, snapshot);
+  return snapshot;
+}
+
+async function getProfitLeaderboardSnapshot(fresh = false): Promise<LeaderboardCacheEntry> {
+  if (!fresh && profitLeaderboardCache && profitLeaderboardCache.expiresAt > Date.now()) {
+    return profitLeaderboardCache;
+  }
+
+  const snapshot = await computeProfitLeaderboard();
+  profitLeaderboardCache = snapshot;
   return snapshot;
 }
 
@@ -348,8 +412,16 @@ function paginateLeaderboard(snapshot: LeaderboardCacheEntry, limit: number, cur
   };
 }
 
-export async function getLeaderboard(window: LeaderboardWindow, limit: number, cursor?: string, fresh = false): Promise<LeaderboardPage> {
-  const snapshot = await getLeaderboardSnapshot(window, fresh);
+export async function getLeaderboard(
+  window: LeaderboardWindow,
+  limit: number,
+  cursor?: string,
+  fresh = false,
+  sort: LeaderboardSort = 'volume',
+): Promise<LeaderboardPage> {
+  const snapshot = sort === 'profit'
+    ? await getProfitLeaderboardSnapshot(fresh)
+    : await getLeaderboardSnapshot(window, fresh);
   return paginateLeaderboard(snapshot, limit, cursor);
 }
 
