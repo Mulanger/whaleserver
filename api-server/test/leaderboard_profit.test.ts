@@ -72,6 +72,7 @@ describe('leaderboard profit enrichment', () => {
       allTimeProfitUsd: 321,
       allTimeProfitKnown: true,
       allTimePnlTradeCount: 5,
+      allTimeWinRatePct: 80,
       recentFormResults: ['W', 'L', 'W', 'W', 'W'],
       recentFormWinRatePct: 80,
     });
@@ -135,6 +136,7 @@ describe('leaderboard profit enrichment', () => {
       allTimeProfitUsd: 125,
       allTimeProfitKnown: true,
       allTimePnlTradeCount: 3,
+      allTimeWinRatePct: 100,
       recentFormResults: ['W', 'W', 'W'],
       recentFormWinRatePct: 100,
     });
@@ -187,5 +189,47 @@ describe('leaderboard profit enrichment', () => {
     expect(oneDay.items.map((item) => [item.proxyWallet, item.allTimeProfitUsd])).toEqual(
       sevenDay.items.map((item) => [item.proxyWallet, item.allTimeProfitUsd]),
     );
+  });
+
+  it('separates all-time win rate from recent five-trade form', async () => {
+    const wallet = '0xaaa';
+    const profitRows = [
+      {
+        _id: wallet,
+        allTimeProfitUsd: 1000000,
+        allTimePnlTradeCount: 10,
+        resolvedWinCount: 8,
+        resolvedLossCount: 2,
+      },
+    ];
+    const recentRows = [
+      {
+        _id: wallet,
+        statuses: ['resolved_loss', 'resolved_loss', 'resolved_loss', 'resolved_loss', 'resolved_loss'],
+      },
+    ];
+    const toArray = vi
+      .fn()
+      .mockResolvedValueOnce(profitRows)
+      .mockResolvedValueOnce(profitRows)
+      .mockResolvedValueOnce(recentRows);
+    const outcomesAggregate = vi.fn().mockReturnValue({ toArray });
+
+    state.db = {
+      collection: vi.fn((name: string) => {
+        if (name === 'trade_outcomes') return { aggregate: outcomesAggregate };
+        throw new Error(`unexpected collection ${name}`);
+      }),
+    };
+
+    const page = await getLeaderboard('1d', 10, undefined, true, 'profit');
+
+    expect(page.items[0]).toMatchObject({
+      proxyWallet: wallet,
+      allTimeProfitUsd: 1000000,
+      allTimeWinRatePct: 80,
+      recentFormResults: ['L', 'L', 'L', 'L', 'L'],
+      recentFormWinRatePct: 0,
+    });
   });
 });

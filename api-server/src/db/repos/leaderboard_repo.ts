@@ -50,6 +50,7 @@ interface LeaderboardProfitSummary {
   allTimeProfitUsd: number;
   allTimeProfitKnown: boolean;
   allTimePnlTradeCount: number;
+  allTimeWinRatePct: number | null;
   recentFormResults: Array<'W' | 'L'>;
   recentFormWinRatePct: number | null;
 }
@@ -73,6 +74,7 @@ export interface LeaderboardItem {
   allTimeProfitUsd?: number | null;
   allTimeProfitKnown?: boolean;
   allTimePnlTradeCount?: number | null;
+  allTimeWinRatePct?: number | null;
   recentFormResults?: Array<'W' | 'L'>;
   recentFormWinRatePct?: number | null;
 }
@@ -196,6 +198,12 @@ function recentWinRatePct(results: Array<'W' | 'L'>): number | null {
   return (wins / results.length) * 100;
 }
 
+function allTimeWinRatePct(wins: number, losses: number): number | null {
+  const total = wins + losses;
+  if (total <= 0) return null;
+  return (wins / total) * 100;
+}
+
 async function getLeaderboardProfitSummaries(wallets: string[]): Promise<Map<string, LeaderboardProfitSummary>> {
   const db = getDb();
   const normalizedWallets = Array.from(
@@ -247,6 +255,7 @@ async function getLeaderboardProfitSummaries(wallets: string[]): Promise<Map<str
       allTimeProfitUsd: row.allTimeProfitUsd,
       allTimeProfitKnown: row.allTimePnlTradeCount > 0,
       allTimePnlTradeCount: row.allTimePnlTradeCount,
+      allTimeWinRatePct: allTimeWinRatePct(row.resolvedWinCount, row.resolvedLossCount),
       recentFormResults: [],
       recentFormWinRatePct: null,
     });
@@ -263,6 +272,7 @@ async function getLeaderboardProfitSummaries(wallets: string[]): Promise<Map<str
       allTimeProfitUsd: existing?.allTimeProfitUsd ?? 0,
       allTimeProfitKnown: existing?.allTimeProfitKnown ?? results.length > 0,
       allTimePnlTradeCount: existing?.allTimePnlTradeCount ?? results.length,
+      allTimeWinRatePct: existing?.allTimeWinRatePct ?? null,
       recentFormResults: results,
       recentFormWinRatePct: recentWinRatePct(results),
     });
@@ -314,6 +324,7 @@ async function computeLeaderboard(window: LeaderboardWindow): Promise<Leaderboar
       allTimeProfitUsd: profit?.allTimeProfitUsd ?? null,
       allTimeProfitKnown: profit?.allTimeProfitKnown ?? false,
       allTimePnlTradeCount: profit?.allTimePnlTradeCount ?? null,
+      allTimeWinRatePct: profit?.allTimeWinRatePct ?? null,
       recentFormResults: profit?.recentFormResults ?? [],
       recentFormWinRatePct: profit?.recentFormWinRatePct ?? null,
     };
@@ -366,6 +377,7 @@ async function computeProfitLeaderboard(): Promise<LeaderboardCacheEntry> {
       allTimeProfitUsd: profit?.allTimeProfitUsd ?? row.allTimeProfitUsd,
       allTimeProfitKnown: profit?.allTimeProfitKnown ?? row.allTimePnlTradeCount > 0,
       allTimePnlTradeCount: profit?.allTimePnlTradeCount ?? row.allTimePnlTradeCount,
+      allTimeWinRatePct: profit?.allTimeWinRatePct ?? allTimeWinRatePct(row.resolvedWinCount, row.resolvedLossCount),
       recentFormResults: profit?.recentFormResults ?? [],
       recentFormWinRatePct: profit?.recentFormWinRatePct ?? null,
     };
