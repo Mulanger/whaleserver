@@ -4,6 +4,11 @@ import { logger } from '../logger.js';
 
 let fcmApp: admin.app.App | null = null;
 
+function maskToken(token: string): string {
+  if (token.length <= 12) return '[redacted]';
+  return `${token.slice(0, 6)}...${token.slice(-4)}`;
+}
+
 function getFcmApp(): admin.app.App | null {
   if (config.FIREBASE_PROJECT_ID === 'mock') return null;
   if (fcmApp) return fcmApp;
@@ -33,7 +38,7 @@ export async function sendPush(
   const apnsExpiration = String(Math.floor(Date.now() / 1000) + config.FCM_MESSAGE_TTL_SECONDS);
 
   if (!app) {
-    logger.info({ token, notification }, 'mock push sent');
+    logger.info({ token: maskToken(token), notification }, 'mock push sent');
     return;
   }
 
@@ -69,7 +74,7 @@ export async function sendPush(
       },
     });
   } catch (e) {
-    logger.error({ error: e, token }, 'failed to send FCM push');
+    logger.error({ error: e, token: maskToken(token) }, 'failed to send FCM push');
     throw e;
   }
 }

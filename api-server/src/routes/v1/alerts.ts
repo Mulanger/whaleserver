@@ -13,16 +13,16 @@ import { deleteSubscription } from '../../db/repos/alerts_repo.js';
 import type { JwtPayload } from '../../auth/jwt.js';
 
 const subscribeSchema = z.object({
-  fcmToken: z.string().min(1),
-  minUsd: z.number(),
+  fcmToken: z.string().min(1).max(4096),
+  minUsd: z.number().finite().nonnegative().max(1_000_000_000),
   megaOnly: z.boolean(),
   followingOnly: z.boolean().optional().default(false),
-  categories: z.array(z.enum(ALERT_CATEGORIES)),
+  categories: z.array(z.enum(ALERT_CATEGORIES)).max(ALERT_CATEGORIES.length),
   quietHours: z
     .object({
       start: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
       end: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
-      tz: z.string(),
+      tz: z.string().min(1).max(128),
     })
     .nullable()
     .optional()
@@ -39,7 +39,7 @@ const subscribeSchema = z.object({
 
 const unsubscribeSchema = z
   .object({
-    fcmToken: z.string().min(1).optional(),
+    fcmToken: z.string().min(1).max(4096).optional(),
   })
   .strict();
 

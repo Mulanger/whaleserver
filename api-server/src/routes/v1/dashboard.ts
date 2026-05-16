@@ -3,14 +3,17 @@ import type { FastifyInstance } from 'fastify';
 import { getTodayDashboard } from '../../db/repos/dashboard_repo.js';
 
 const dashboardTodayQuerySchema = z.object({
-  minUsd: z.coerce.number().optional(),
-  maxUsd: z.coerce.number().optional(),
+  minUsd: z.coerce.number().finite().nonnegative().max(1_000_000_000).optional(),
+  maxUsd: z.coerce.number().finite().nonnegative().max(1_000_000_000).optional(),
   side: z.enum(['BUY', 'SELL']).optional(),
-  category: z.string().optional(),
-  categories: z.string().optional(),
+  category: z.string().trim().max(100).optional(),
+  categories: z.string().trim().max(2_000).optional(),
   recentLimit: z.coerce.number().int().min(1).max(100).optional().default(100),
   leaderboardLimit: z.coerce.number().int().min(1).max(100).optional().default(50),
   fresh: z.coerce.boolean().optional().default(false),
+}).refine((query) => {
+  if (query.minUsd == null || query.maxUsd == null) return true;
+  return query.minUsd <= query.maxUsd;
 });
 
 function parseCategories(category?: string, categories?: string): string[] | undefined {

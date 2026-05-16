@@ -6,23 +6,32 @@ import { verifyToken, extractUserId } from '../../auth/jwt.js';
 import { getFollowedWallets } from '../../db/repos/follows_repo.js';
 
 const whaleQuerySchema = z.object({
-  minUsd: z.coerce.number().optional(),
-  maxUsd: z.coerce.number().optional(),
+  minUsd: z.coerce.number().finite().nonnegative().max(1_000_000_000).optional(),
+  maxUsd: z.coerce.number().finite().nonnegative().max(1_000_000_000).optional(),
   tier: z.enum(['mega', 'large', 'whale', 'mini']).optional(),
-  category: z.string().optional(),
-  categories: z.string().optional(),
+  category: z.string().trim().max(100).optional(),
+  categories: z.string().trim().max(2_000).optional(),
   side: z.enum(['BUY', 'SELL']).optional(),
-  marketSlug: z.string().optional(),
-  traderWallet: z.string().optional(),
+  marketSlug: z.string().trim().max(250).optional(),
+  traderWallet: z.union([z.string().regex(/^0x[0-9a-fA-F]{40}$/), z.literal('')]).optional(),
   following: z.coerce.boolean().optional(),
-  cursor: z.string().optional(),
+  cursor: z.string().max(500).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+}).refine((query) => {
+  if (query.minUsd == null || query.maxUsd == null) return true;
+  return query.minUsd <= query.maxUsd;
 });
+
+const cursorSchema = z.object({
+  ts: z.number().int().nonnegative(),
+  id: z.string().min(1).max(128),
+}).strict();
 
 function decodeCursor(cursor: string): Cursor | undefined {
   try {
     const decoded = Buffer.from(cursor, 'base64url').toString('utf-8');
-    return JSON.parse(decoded) as Cursor;
+    const parsed = cursorSchema.safeParse(JSON.parse(decoded));
+    return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
   }

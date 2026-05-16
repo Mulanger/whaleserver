@@ -14,12 +14,12 @@
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",
-    "@fastify/jwt": "^9.0.0",
+    "@fastify/jwt": "^10.0.0",
     "@fastify/rate-limit": "^10.0.0",
     "@fastify/websocket": "^11.0.0",
     "@sentry/node": "^8.0.0",
     "fastify": "^5.0.0",
-    "firebase-admin": "^12.0.0",
+    "firebase-admin": "^13.10.0",
     "ioredis": "^5.0.0",
     "mongodb": "^6.0.0",
     "pino": "^9.0.0",
@@ -28,12 +28,11 @@
     "zod": "^3.0.0"
   },
   "devDependencies": {
-    "@railway/cli": "^4.43.0",
     "@types/node": "^22.0.0",
-    "esbuild": "^0.24.2",
+    "esbuild": "^0.28.0",
     "tsx": "^4.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.0.0"
+    "vitest": "^4.1.6"
   },
   "engines": {
     "node": ">=22"

@@ -66,7 +66,7 @@ export function createHub(redisSub: Redis) {
       try {
         payload = JSON.parse(message) as ResolutionEventPayload;
       } catch {
-        logger.warn({ message }, 'failed to parse resolution event');
+        logger.warn({ messageLength: message.length }, 'failed to parse resolution event');
         return;
       }
 

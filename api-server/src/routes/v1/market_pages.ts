@@ -10,6 +10,10 @@ const marketPagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional().default(250),
 });
 
+const slugParamSchema = z.object({
+  slug: z.string().trim().min(1).max(250),
+});
+
 export async function registerMarketPagesRoutes(fastify: FastifyInstance) {
   fastify.get('/', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (request, reply) => {
     const parsed = marketPagesQuerySchema.safeParse(request.query);
@@ -25,7 +29,12 @@ export async function registerMarketPagesRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get<{ Params: { slug: string } }>('/:slug', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const marketPage = await getMarketPageBySlug(request.params.slug);
+    const parsed = slugParamSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'invalid slug' });
+    }
+
+    const marketPage = await getMarketPageBySlug(parsed.data.slug);
     if (!marketPage) {
       return reply.status(404).send({ error: 'market page not found' });
     }

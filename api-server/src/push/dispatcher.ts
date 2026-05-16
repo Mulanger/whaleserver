@@ -111,11 +111,11 @@ export function createDispatcher(redisSub: Redis, db: Db, config: Config) {
         try {
           whale = normalizeWhaleMessage(JSON.parse(message));
         } catch {
-          logger.warn({ message }, 'failed to parse whale from redis');
+          logger.warn({ messageLength: message.length }, 'failed to parse whale from redis');
           return;
         }
         if (!whale) {
-          logger.warn({ message }, 'redis whale missing id');
+          logger.warn({ messageLength: message.length }, 'redis whale missing id');
           return;
         }
 

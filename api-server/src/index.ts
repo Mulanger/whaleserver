@@ -36,6 +36,7 @@ initSentry();
 
 const fastify = Fastify({
   logger: { level: 'info' },
+  bodyLimit: config.MAX_REQUEST_BODY_BYTES,
   ajv: {
     customOptions: { strict: 'reject' },
   },
@@ -43,6 +44,9 @@ const fastify = Fastify({
 
 fastify.addHook('onRequest', async (_request, reply) => {
   reply.startTime = Date.now();
+  reply.header('X-Content-Type-Options', 'nosniff');
+  reply.header('Referrer-Policy', 'no-referrer');
+  reply.header('X-Frame-Options', 'DENY');
 });
 
 fastify.addHook('onResponse', async (request, reply) => {
@@ -60,7 +64,7 @@ process.on('unhandledRejection', (e) => captureException(e));
 await fastify.register(registerHealthRoutes);
 
 await fastify.register(cors, {
-  origin: config.CORS_ORIGINS.split(',').map((s) => s.trim()),
+  origin: config.CORS_ORIGINS,
   credentials: true,
 });
 
@@ -90,7 +94,11 @@ await fastify.register(rateLimit, {
   }),
 });
 
-await fastify.register(websocket);
+await fastify.register(websocket, {
+  options: {
+    maxPayload: 16 * 1024,
+  },
+});
 
 const mongo = await connectMongo();
 await ensureIndexes();
@@ -100,6 +108,13 @@ const hub = createHub(redisSub);
 fastify.decorate('hub', hub);
 
 fastify.get('/metrics', async (_request, reply) => {
+  if (config.METRICS_TOKEN) {
+    const auth = _request.headers.authorization;
+    if (auth !== `Bearer ${config.METRICS_TOKEN}`) {
+      return reply.status(401).send({ error: 'unauthorized' });
+    }
+  }
+
   const metrics = await getMetrics();
   reply.header('Content-Type', getContentType());
   return reply.send(metrics);

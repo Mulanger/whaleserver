@@ -2,6 +2,10 @@ import { getDb } from '../mongo.js';
 import type { MarketDto, WhaleDto } from '../../shared/types.js';
 import { toWhaleDto } from './whales_repo.js';
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export async function getMarkets(opts: {
   search?: string;
   category?: string;
@@ -14,7 +18,7 @@ export async function getMarkets(opts: {
 
   if (opts.category) q['category'] = opts.category;
   if (opts.active !== false) q['active'] = true;
-  if (opts.search) q['title'] = { $regex: `^${opts.search}`, $options: 'i' };
+  if (opts.search) q['title'] = { $regex: `^${escapeRegex(opts.search)}`, $options: 'i' };
 
   const limit = Math.min(opts.limit ?? 50, 100);
 

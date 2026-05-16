@@ -6,7 +6,7 @@ const leaderboardQuerySchema = z.object({
   window: z.enum(['1d', '7d', '30d', '365d']).optional().default('1d'),
   sort: z.enum(['volume', 'profit']).optional().default('volume'),
   limit: z.coerce.number().int().min(1).max(100).optional().default(50),
-  cursor: z.string().optional(),
+  cursor: z.string().max(500).optional(),
   fresh: z.coerce.boolean().optional().default(false),
 });
 

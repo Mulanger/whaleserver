@@ -1,13 +1,39 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import type { Hub } from '../../ws/hub.js';
 import type { WhaleFilter } from '../../shared/types.js';
 import { verifyToken, extractUserId } from '../../auth/jwt.js';
 import { getFollowedWallets } from '../../db/repos/follows_repo.js';
 
-interface ClientMessage {
-  type: 'subscribe' | 'unsubscribe' | 'ping';
-  filter?: WhaleFilter;
-}
+const walletSchema = z
+  .string()
+  .regex(/^0x[0-9a-fA-F]{40}$/)
+  .transform((wallet) => wallet.toLowerCase());
+
+const filterSchema = z
+  .object({
+    minUsd: z.coerce.number().finite().nonnegative().max(1_000_000_000).optional(),
+    maxUsd: z.coerce.number().finite().nonnegative().max(1_000_000_000).optional(),
+    tier: z.enum(['mega', 'large', 'whale', 'mini']).optional(),
+    categories: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
+    side: z.enum(['BUY', 'SELL']).optional(),
+    marketSlug: z.string().trim().max(250).optional(),
+    traderWallet: z.union([walletSchema, z.literal('')]).optional(),
+    following: z.coerce.boolean().optional(),
+  })
+  .refine((filter) => {
+    if (filter.minUsd == null || filter.maxUsd == null) return true;
+    return filter.minUsd <= filter.maxUsd;
+  });
+
+const clientMessageSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('subscribe'),
+    filter: filterSchema.optional(),
+  }),
+  z.object({ type: z.literal('unsubscribe') }),
+  z.object({ type: z.literal('ping') }),
+]);
 
 function getClientIp(request: unknown): string {
   const req = request as { ip?: string; headers?: { [key: string]: string | string[] | undefined } };
@@ -40,7 +66,15 @@ export async function registerStreamRoute(fastify: FastifyInstance) {
 
     socket.on('message', async (data) => {
       try {
-        const msg = JSON.parse(data.toString()) as ClientMessage;
+        if (!hub.onClientMessage(connId)) return;
+
+        const parsed = clientMessageSchema.safeParse(JSON.parse(data.toString()));
+        if (!parsed.success) {
+          socket.send(JSON.stringify({ type: 'error', code: 'BAD_MESSAGE', message: 'invalid message' }));
+          return;
+        }
+
+        const msg = parsed.data;
 
         switch (msg.type) {
           case 'subscribe':
@@ -70,7 +104,6 @@ export async function registerStreamRoute(fastify: FastifyInstance) {
             socket.send(JSON.stringify({ type: 'pong' }));
             break;
         }
-        if (!hub.onClientMessage(connId)) return;
       } catch {
         socket.send(JSON.stringify({ type: 'error', code: 'BAD_MESSAGE', message: 'invalid JSON' }));
       }
